@@ -5,9 +5,16 @@ import react from '@vitejs/plugin-react'
 const stubNodeModules = (): Plugin => ({
   name: 'stub-node-modules',
   enforce: 'pre',
-  resolveId(id) {
+  resolveId(id, importer) {
+    // Handle both direct imports and imports from densing
     if (id === 'fs' || id === 'path' || id === 'node:module') {
       return '\0' + id;
+    }
+    // Also handle when these are imported from within densing
+    if (importer?.includes('node_modules/densing')) {
+      if (id === 'fs' || id === 'path' || id === 'node:module') {
+        return '\0' + id;
+      }
     }
   },
   load(id) {
@@ -27,4 +34,12 @@ const stubNodeModules = (): Plugin => ({
 export default defineConfig({
   plugins: [stubNodeModules(), react()],
   base: '/densing-ui/',
+  optimizeDeps: {
+    esbuildOptions: {
+      // Define shims for Node.js globals
+      define: {
+        global: 'globalThis'
+      },
+    },
+  },
 })
