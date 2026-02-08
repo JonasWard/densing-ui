@@ -277,6 +277,43 @@
   line-height: 1.4;
 }
 
+.nested-config {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.nested-config h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.nested-field-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--background);
+  border-radius: 0.375rem;
+}
+
+.nested-field-editor .form-group {
+  margin-bottom: 0;
+}
+
+.nested-field-editor .form-group label {
+  font-size: 0.75rem;
+}
+
+.nested-field-editor .form-group input,
+.nested-field-editor .form-group select {
+  padding: 0.5rem;
+  font-size: 0.813rem;
+}
+
 .schema-builder-footer {
   display: flex;
   gap: 1rem;

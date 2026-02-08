@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 const stubNodeModules = (): Plugin => ({
   name: 'stub-node-modules',
   enforce: 'pre',
-  resolveId(id, importer) {
+  resolveId(id) {
     // Intercept all imports of these Node.js modules
     if (id === 'fs' || id === 'path' || id === 'node:module' || 
         id === 'node:fs' || id === 'node:path') {
