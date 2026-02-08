@@ -69,10 +69,10 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
     setFields(newFields);
   };
 
-  const createDefaultField = (type: FieldConfig['type']): FieldConfig => {
+  const createDefaultField = (type: FieldConfig['type'], name: string = 'field'): FieldConfig => {
     const baseField: FieldConfig = {
       id: Date.now().toString() + Math.random(),
-      name: 'item',
+      name: name,
       type: type,
     };
     
@@ -83,6 +83,23 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
         return { ...baseField, min: 0, max: 100, precision: 0.1 };
       case 'enum':
         return { ...baseField, options: ['option1', 'option2'] };
+      case 'optional':
+        return { ...baseField, wrappedField: createDefaultField('bool', 'value') };
+      case 'array':
+        return { ...baseField, minLength: 0, maxLength: 10, wrappedField: createDefaultField('int', 'item') };
+      case 'enum_array':
+        return { ...baseField, minLength: 0, maxLength: 10, enumField: createDefaultField('enum', 'item') };
+      case 'object':
+        return { ...baseField, fields: [createDefaultField('bool', 'field1')] };
+      case 'union':
+        return {
+          ...baseField,
+          discriminatorField: { ...createDefaultField('enum', 'type'), options: ['A', 'B'] },
+          variants: {
+            'A': [createDefaultField('bool', 'fieldA')],
+            'B': [createDefaultField('int', 'fieldB')]
+          }
+        };
       default:
         return baseField;
     }
@@ -274,211 +291,11 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
           </div>
 
           {editingField && (
-            <div className="field-editor">
-              <h3>Edit Field</h3>
-              
-              <div className="form-group">
-                <label>Field Name:</label>
-                <input
-                  type="text"
-                  value={editingField.name}
-                  onChange={(e) => updateField(editingField.id, { name: e.target.value })}
-                  placeholder="fieldName"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Field Type:</label>
-                <select
-                  value={editingField.type}
-                  onChange={(e) => {
-                    const newType = e.target.value as FieldConfig['type'];
-                    const updates: Partial<FieldConfig> = { 
-                      type: newType,
-                      min: undefined,
-                      max: undefined,
-                      precision: undefined,
-                      options: undefined,
-                      wrappedField: undefined,
-                      fields: undefined,
-                      minLength: undefined,
-                      maxLength: undefined,
-                      enumField: undefined,
-                      discriminatorField: undefined,
-                      variants: undefined,
-                    };
-                    
-                    // Set defaults for specific types
-                    if (newType === 'int') {
-                      updates.min = 0;
-                      updates.max = 100;
-                    } else if (newType === 'fixed') {
-                      updates.min = 0;
-                      updates.max = 100;
-                      updates.precision = 0.1;
-                    } else if (newType === 'enum') {
-                      updates.options = ['option1', 'option2'];
-                    } else if (newType === 'optional') {
-                      updates.wrappedField = createDefaultField('bool');
-                    } else if (newType === 'array') {
-                      updates.minLength = 0;
-                      updates.maxLength = 10;
-                      updates.wrappedField = createDefaultField('int');
-                    } else if (newType === 'enum_array') {
-                      updates.minLength = 0;
-                      updates.maxLength = 10;
-                      updates.enumField = createDefaultField('enum');
-                    } else if (newType === 'object') {
-                      updates.fields = [createDefaultField('bool')];
-                    } else if (newType === 'union') {
-                      updates.discriminatorField = { ...createDefaultField('enum'), name: 'type', options: ['A', 'B'] };
-                      updates.variants = {
-                        'A': [{ ...createDefaultField('bool'), name: 'fieldA' }],
-                        'B': [{ ...createDefaultField('int'), name: 'fieldB' }]
-                      };
-                    }
-                    
-                    updateField(editingField.id, updates);
-                  }}
-                >
-                  <option value="bool">Boolean</option>
-                  <option value="int">Integer</option>
-                  <option value="fixed">Fixed Point Number</option>
-                  <option value="enum">Enumeration</option>
-                  <option value="optional">Optional</option>
-                  <option value="array">Array</option>
-                  <option value="enum_array">Enum Array</option>
-                  <option value="object">Object</option>
-                  <option value="union">Union</option>
-                </select>
-              </div>
-
-              {(editingField.type === 'int' || editingField.type === 'fixed') && (
-                <>
-                  <div className="form-group">
-                    <label>Min Value:</label>
-                    <input
-                      type="number"
-                      value={editingField.min ?? 0}
-                      onChange={(e) => updateField(editingField.id, { min: parseFloat(e.target.value) })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Max Value:</label>
-                    <input
-                      type="number"
-                      value={editingField.max ?? 100}
-                      onChange={(e) => updateField(editingField.id, { max: parseFloat(e.target.value) })}
-                    />
-                  </div>
-                </>
-              )}
-
-              {editingField.type === 'fixed' && (
-                <div className="form-group">
-                  <label>Precision:</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editingField.precision ?? 0.1}
-                    onChange={(e) => updateField(editingField.id, { precision: parseFloat(e.target.value) })}
-                  />
-                </div>
-              )}
-
-              {editingField.type === 'enum' && (
-                <div className="form-group">
-                  <label>Options (comma-separated):</label>
-                  <input
-                    type="text"
-                    value={editingField.options?.join(', ') ?? 'option1, option2'}
-                    onChange={(e) => updateField(editingField.id, { 
-                      options: e.target.value.split(',').map(o => o.trim()).filter(Boolean)
-                    })}
-                    placeholder="option1, option2, option3"
-                  />
-                </div>
-              )}
-
-              {(editingField.type === 'array' || editingField.type === 'enum_array') && (
-                <>
-                  <div className="form-group">
-                    <label>Min Length:</label>
-                    <input
-                      type="number"
-                      value={editingField.minLength ?? 0}
-                      onChange={(e) => updateField(editingField.id, { minLength: parseInt(e.target.value) })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Max Length:</label>
-                    <input
-                      type="number"
-                      value={editingField.maxLength ?? 10}
-                      onChange={(e) => updateField(editingField.id, { maxLength: parseInt(e.target.value) })}
-                    />
-                  </div>
-                </>
-              )}
-
-              {editingField.type === 'optional' && editingField.wrappedField && (
-                <div className="nested-config">
-                  <h4>Wrapped Field Configuration:</h4>
-                  <NestedFieldEditor
-                    field={editingField.wrappedField}
-                    onChange={(updated) => updateField(editingField.id, { wrappedField: updated })}
-                  />
-                </div>
-              )}
-
-              {editingField.type === 'array' && editingField.wrappedField && (
-                <div className="nested-config">
-                  <h4>Array Item Configuration:</h4>
-                  <NestedFieldEditor
-                    field={editingField.wrappedField}
-                    onChange={(updated) => updateField(editingField.id, { wrappedField: updated })}
-                  />
-                </div>
-              )}
-
-              {editingField.type === 'enum_array' && editingField.enumField && (
-                <div className="nested-config">
-                  <h4>Enum Configuration:</h4>
-                  <div className="form-group">
-                    <label>Options (comma-separated):</label>
-                    <input
-                      type="text"
-                      value={editingField.enumField.options?.join(', ') ?? 'A, B, C'}
-                      onChange={(e) => {
-                        const updated = { ...editingField.enumField!, options: e.target.value.split(',').map(o => o.trim()).filter(Boolean) };
-                        updateField(editingField.id, { enumField: updated });
-                      }}
-                      placeholder="A, B, C"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {editingField.type === 'object' && (
-                <div className="nested-config">
-                  <h4>Object Fields:</h4>
-                  <div className="form-note">
-                    Complex object field configuration - add simple bool field by default.
-                    For more complex objects, consider creating them as separate schemas.
-                  </div>
-                </div>
-              )}
-
-              {editingField.type === 'union' && (
-                <div className="nested-config">
-                  <h4>Union Configuration:</h4>
-                  <div className="form-note">
-                    Complex union configuration - defaults created with type discriminator.
-                    For more complex unions, consider creating them programmatically.
-                  </div>
-                </div>
-              )}
-            </div>
+            <FieldEditor
+              field={editingField}
+              onChange={(updated) => updateField(editingField.id, updated)}
+              createDefaultField={createDefaultField}
+            />
           )}
         </div>
 
@@ -497,107 +314,337 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
   );
 };
 
-const NestedFieldEditor = ({ field, onChange }: { field: FieldConfig; onChange: (field: FieldConfig) => void }) => {
+// Separate component for editing a field
+const FieldEditor = ({ 
+  field, 
+  onChange, 
+  createDefaultField 
+}: { 
+  field: FieldConfig; 
+  onChange: (field: Partial<FieldConfig>) => void;
+  createDefaultField: (type: FieldConfig['type'], name?: string) => FieldConfig;
+}) => {
   return (
-    <div className="nested-field-editor">
+    <div className="field-editor">
+      <h3>Edit Field</h3>
+      
       <div className="form-group">
-        <label>Type:</label>
+        <label>Field Name:</label>
+        <input
+          type="text"
+          value={field.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          placeholder="fieldName"
+        />
+      </div>
+
+      <div className="form-group">
+        <label>Field Type:</label>
         <select
           value={field.type}
           onChange={(e) => {
             const newType = e.target.value as FieldConfig['type'];
-            const baseField: FieldConfig = {
-              ...field,
-              type: newType,
-              min: undefined,
-              max: undefined,
-              precision: undefined,
-              options: undefined,
-            };
-            
-            if (newType === 'int') {
-              onChange({ ...baseField, min: 0, max: 100 });
-            } else if (newType === 'fixed') {
-              onChange({ ...baseField, min: 0, max: 100, precision: 0.1 });
-            } else if (newType === 'enum') {
-              onChange({ ...baseField, options: ['option1', 'option2'] });
-            } else {
-              onChange(baseField);
-            }
+            const newField = createDefaultField(newType, field.name);
+            onChange(newField);
           }}
         >
           <option value="bool">Boolean</option>
           <option value="int">Integer</option>
-          <option value="fixed">Fixed Point</option>
-          <option value="enum">Enum</option>
+          <option value="fixed">Fixed Point Number</option>
+          <option value="enum">Enumeration</option>
+          <option value="optional">Optional</option>
+          <option value="array">Array</option>
+          <option value="enum_array">Enum Array</option>
+          <option value="object">Object</option>
+          <option value="union">Union</option>
         </select>
       </div>
 
-      {field.type === 'int' && (
+      {(field.type === 'int' || field.type === 'fixed') && (
         <>
           <div className="form-group">
-            <label>Min:</label>
+            <label>Min Value:</label>
             <input
               type="number"
               value={field.min ?? 0}
-              onChange={(e) => onChange({ ...field, min: parseFloat(e.target.value) })}
+              onChange={(e) => onChange({ min: parseFloat(e.target.value) })}
             />
           </div>
           <div className="form-group">
-            <label>Max:</label>
+            <label>Max Value:</label>
             <input
               type="number"
               value={field.max ?? 100}
-              onChange={(e) => onChange({ ...field, max: parseFloat(e.target.value) })}
+              onChange={(e) => onChange({ max: parseFloat(e.target.value) })}
             />
           </div>
         </>
       )}
 
       {field.type === 'fixed' && (
+        <div className="form-group">
+          <label>Precision:</label>
+          <input
+            type="number"
+            step="0.01"
+            value={field.precision ?? 0.1}
+            onChange={(e) => onChange({ precision: parseFloat(e.target.value) })}
+          />
+        </div>
+      )}
+
+      {field.type === 'enum' && (
+        <div className="form-group">
+          <label>Options (comma-separated):</label>
+          <input
+            type="text"
+            value={field.options?.join(', ') ?? 'option1, option2'}
+            onChange={(e) => onChange({ 
+              options: e.target.value.split(',').map(o => o.trim()).filter(Boolean)
+            })}
+            placeholder="option1, option2, option3"
+          />
+        </div>
+      )}
+
+      {(field.type === 'array' || field.type === 'enum_array') && (
         <>
           <div className="form-group">
-            <label>Min:</label>
+            <label>Min Length:</label>
             <input
               type="number"
-              value={field.min ?? 0}
-              onChange={(e) => onChange({ ...field, min: parseFloat(e.target.value) })}
+              value={field.minLength ?? 0}
+              onChange={(e) => onChange({ minLength: parseInt(e.target.value) })}
             />
           </div>
           <div className="form-group">
-            <label>Max:</label>
+            <label>Max Length:</label>
             <input
               type="number"
-              value={field.max ?? 100}
-              onChange={(e) => onChange({ ...field, max: parseFloat(e.target.value) })}
-            />
-          </div>
-          <div className="form-group">
-            <label>Precision:</label>
-            <input
-              type="number"
-              step="0.01"
-              value={field.precision ?? 0.1}
-              onChange={(e) => onChange({ ...field, precision: parseFloat(e.target.value) })}
+              value={field.maxLength ?? 10}
+              onChange={(e) => onChange({ maxLength: parseInt(e.target.value) })}
             />
           </div>
         </>
       )}
 
-      {field.type === 'enum' && (
-        <div className="form-group">
-          <label>Options:</label>
-          <input
-            type="text"
-            value={field.options?.join(', ') ?? 'option1, option2'}
-            onChange={(e) => onChange({ 
-              ...field, 
-              options: e.target.value.split(',').map(o => o.trim()).filter(Boolean)
-            })}
-            placeholder="option1, option2"
-          />
+      {field.type === 'optional' && field.wrappedField && (
+        <NestedFieldConfig
+          title="Wrapped Field"
+          field={field.wrappedField}
+          onChange={(updated) => onChange({ wrappedField: updated })}
+          createDefaultField={createDefaultField}
+        />
+      )}
+
+      {field.type === 'array' && field.wrappedField && (
+        <NestedFieldConfig
+          title="Array Item Type"
+          field={field.wrappedField}
+          onChange={(updated) => onChange({ wrappedField: updated })}
+          createDefaultField={createDefaultField}
+        />
+      )}
+
+      {field.type === 'enum_array' && field.enumField && (
+        <div className="nested-config">
+          <h4>Enum Configuration:</h4>
+          <div className="form-group">
+            <label>Options (comma-separated):</label>
+            <input
+              type="text"
+              value={field.enumField.options?.join(', ') ?? 'A, B, C'}
+              onChange={(e) => {
+                const updated = { ...field.enumField!, options: e.target.value.split(',').map(o => o.trim()).filter(Boolean) };
+                onChange({ enumField: updated });
+              }}
+              placeholder="A, B, C"
+            />
+          </div>
         </div>
       )}
+
+      {field.type === 'object' && (
+        <ObjectFieldsConfig
+          fields={field.fields ?? []}
+          onChange={(updated) => onChange({ fields: updated })}
+          createDefaultField={createDefaultField}
+        />
+      )}
+
+      {field.type === 'union' && field.discriminatorField && field.variants && (
+        <UnionConfig
+          discriminatorField={field.discriminatorField}
+          variants={field.variants}
+          onChange={(discriminator, variants) => onChange({ discriminatorField: discriminator, variants })}
+          createDefaultField={createDefaultField}
+        />
+      )}
+    </div>
+  );
+};
+
+// Component for configuring nested fields (optional, array items)
+const NestedFieldConfig = ({ 
+  title,
+  field, 
+  onChange,
+  createDefaultField
+}: { 
+  title: string;
+  field: FieldConfig; 
+  onChange: (field: FieldConfig) => void;
+  createDefaultField: (type: FieldConfig['type'], name?: string) => FieldConfig;
+}) => {
+  return (
+    <div className="nested-config">
+      <h4>{title}:</h4>
+      <FieldEditor
+        field={field}
+        onChange={(updates) => onChange({ ...field, ...updates })}
+        createDefaultField={createDefaultField}
+      />
+    </div>
+  );
+};
+
+// Component for object fields configuration
+const ObjectFieldsConfig = ({
+  fields,
+  onChange,
+  createDefaultField
+}: {
+  fields: FieldConfig[];
+  onChange: (fields: FieldConfig[]) => void;
+  createDefaultField: (type: FieldConfig['type'], name?: string) => FieldConfig;
+}) => {
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  const addField = () => {
+    const newField = createDefaultField('bool', `field${fields.length + 1}`);
+    onChange([...fields, newField]);
+    setEditingIndex(fields.length);
+  };
+
+  const removeField = (index: number) => {
+    onChange(fields.filter((_, i) => i !== index));
+    if (editingIndex === index) setEditingIndex(null);
+  };
+
+  return (
+    <div className="nested-config">
+      <div className="object-fields-header">
+        <h4>Object Fields:</h4>
+        <button className="add-nested-button" onClick={addField}>+ Add Field</button>
+      </div>
+      
+      <div className="object-fields-list">
+        {fields.map((field, index) => (
+          <div key={field.id} className="object-field-item">
+            <div 
+              className="object-field-summary"
+              onClick={() => setEditingIndex(editingIndex === index ? null : index)}
+            >
+              <span>{field.name} ({field.type})</span>
+              <div className="object-field-actions">
+                <button onClick={(e) => { e.stopPropagation(); removeField(index); }}>×</button>
+              </div>
+            </div>
+            {editingIndex === index && (
+              <div className="object-field-details">
+                <FieldEditor
+                  field={field}
+                  onChange={(updates) => {
+                    const updated = [...fields];
+                    updated[index] = { ...field, ...updates };
+                    onChange(updated);
+                  }}
+                  createDefaultField={createDefaultField}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Component for union configuration
+const UnionConfig = ({
+  discriminatorField,
+  variants,
+  onChange,
+  createDefaultField
+}: {
+  discriminatorField: FieldConfig;
+  variants: Record<string, FieldConfig[]>;
+  onChange: (discriminator: FieldConfig, variants: Record<string, FieldConfig[]>) => void;
+  createDefaultField: (type: FieldConfig['type'], name?: string) => FieldConfig;
+}) => {
+  const [editingVariant, setEditingVariant] = useState<string | null>(null);
+
+  const updateDiscriminator = (options: string[]) => {
+    const newVariants: Record<string, FieldConfig[]> = {};
+    options.forEach(option => {
+      newVariants[option] = variants[option] ?? [createDefaultField('bool', `field${option}`)];
+    });
+    onChange({ ...discriminatorField, options }, newVariants);
+  };
+
+  const updateVariantFields = (variantKey: string, fields: FieldConfig[]) => {
+    onChange(discriminatorField, { ...variants, [variantKey]: fields });
+  };
+
+  return (
+    <div className="nested-config">
+      <h4>Union Configuration:</h4>
+      
+      <div className="form-group">
+        <label>Discriminator Name:</label>
+        <input
+          type="text"
+          value={discriminatorField.name}
+          onChange={(e) => onChange({ ...discriminatorField, name: e.target.value }, variants)}
+        />
+      </div>
+
+      <div className="form-group">
+        <label>Variant Options (comma-separated):</label>
+        <input
+          type="text"
+          value={discriminatorField.options?.join(', ') ?? ''}
+          onChange={(e) => {
+            const options = e.target.value.split(',').map(o => o.trim()).filter(Boolean);
+            updateDiscriminator(options);
+          }}
+          placeholder="A, B, C"
+        />
+      </div>
+
+      <div className="union-variants">
+        <h5>Variant Fields:</h5>
+        {discriminatorField.options?.map(option => (
+          <div key={option} className="union-variant">
+            <div 
+              className="variant-header"
+              onClick={() => setEditingVariant(editingVariant === option ? null : option)}
+            >
+              <span>When {discriminatorField.name} = "{option}":</span>
+              <span className="variant-field-count">
+                {variants[option]?.length ?? 0} field(s)
+              </span>
+            </div>
+            {editingVariant === option && (
+              <ObjectFieldsConfig
+                fields={variants[option] ?? []}
+                onChange={(fields) => updateVariantFields(option, fields)}
+                createDefaultField={createDefaultField}
+              />
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
