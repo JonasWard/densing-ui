@@ -156,42 +156,38 @@ export const Home = () => {
       <header className="app-header">
         <h1>🎯 Densing UI</h1>
         <p className="subtitle">Ultra-compact data serialization playground</p>
-        {encodedString && (
-          <div className="share-section">
-            <div className="share-url-container">
-              <input 
-                type="text" 
-                readOnly 
-                value={shareUrl} 
-                className="share-url-input"
-                onClick={(e) => e.currentTarget.select()}
-              />
-              <button 
-                className="share-copy-button"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(shareUrl);
-                  } catch (error) {
-                    const input = document.querySelector('.share-url-input') as HTMLInputElement;
-                    input?.select();
-                    document.execCommand('copy');
-                  }
-                }}
-              >
-                🔗 Copy Share Link
-              </button>
-            </div>
+        <div className="share-section">
+          <div className="share-url-container">
+            <input
+              type="text"
+              disabled={!encodedString}
+              readOnly
+              value={shareUrl}
+              className="share-url-input"
+              onClick={(e) => e.currentTarget.select()}
+            />
+            <button
+              className="share-copy-button"
+              disabled={!encodedString}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(shareUrl);
+                } catch (error) {
+                  const input = document.querySelector('.share-url-input') as HTMLInputElement;
+                  input?.select();
+                  document.execCommand('copy');
+                }
+              }}
+            >
+              🔗 Copy Share Link
+            </button>
           </div>
-        )}
+        </div>
       </header>
 
       <main className="app-main">
         <div className="schema-selector-wrapper">
-          <SchemaSelector
-            schemas={allSchemas}
-            selectedSchema={selectedSchema}
-            onSchemaChange={handleSchemaChange}
-          />
+          <SchemaSelector schemas={allSchemas} selectedSchema={selectedSchema} onSchemaChange={handleSchemaChange} />
           <div className="schema-actions">
             <button className="build-schema-button" onClick={() => setShowBuilder(true)}>
               ⚡ Build Custom Schema
@@ -205,12 +201,7 @@ export const Home = () => {
             )}
             <label className="import-custom-button">
               📂 Import Custom Schemas
-              <input
-                type="file"
-                accept=".json"
-                onChange={handleImportCustomSchemas}
-                style={{ display: 'none' }}
-              />
+              <input type="file" accept=".json" onChange={handleImportCustomSchemas} style={{ display: 'none' }} />
             </label>
           </div>
         </div>
@@ -236,12 +227,7 @@ export const Home = () => {
         </div>
       </main>
 
-      {showBuilder && (
-        <SchemaBuilder
-          onSchemaCreated={handleSchemaCreated}
-          onClose={() => setShowBuilder(false)}
-        />
-      )}
+      {showBuilder && <SchemaBuilder onSchemaCreated={handleSchemaCreated} onClose={() => setShowBuilder(false)} />}
     </div>
   );
 };
