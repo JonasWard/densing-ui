@@ -464,8 +464,8 @@ const FieldEditor = ({
           <label>Options (comma-separated):</label>
           <input
             type="text"
-            value={field.options?.join(', ') ?? 'option1, option2'}
-            onChange={(e) => onChange({ 
+            defaultValue={field.options?.join(', ') ?? 'option1, option2'}
+            onBlur={(e) => onChange({ 
               options: e.target.value.split(',').map(o => o.trim()).filter(Boolean)
             })}
             placeholder="option1, option2, option3"
@@ -519,8 +519,8 @@ const FieldEditor = ({
             <label>Options (comma-separated):</label>
             <input
               type="text"
-              value={field.enumField.options?.join(', ') ?? 'A, B, C'}
-              onChange={(e) => {
+              defaultValue={field.enumField.options?.join(', ') ?? 'A, B, C'}
+              onBlur={(e) => {
                 const updated = { ...field.enumField!, options: e.target.value.split(',').map(o => o.trim()).filter(Boolean) };
                 onChange({ enumField: updated });
               }}
@@ -679,8 +679,9 @@ const UnionConfig = ({
         <label>Variant Options (comma-separated):</label>
         <input
           type="text"
-          value={discriminatorField.options?.join(', ') ?? ''}
-          onChange={(e) => {
+          key={discriminatorField.options?.join(',')}
+          defaultValue={discriminatorField.options?.join(', ') ?? ''}
+          onBlur={(e) => {
             const options = e.target.value.split(',').map(o => o.trim()).filter(Boolean);
             updateDiscriminator(options);
           }}
