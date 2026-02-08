@@ -86,7 +86,15 @@
   gap: 1rem;
 }
 
+.schema-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .build-schema-button {
+  flex: 1;
+  min-width: 200px;
   padding: 1rem;
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: white;
@@ -106,6 +114,52 @@
 
 .build-schema-button:active {
   transform: translateY(0);
+}
+
+.custom-schema-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.export-custom-button,
+.import-custom-button {
+  padding: 1rem;
+  border: 2px solid var(--primary);
+  background: white;
+  color: var(--primary);
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.import-custom-button {
+  display: inline-block;
+}
+
+.export-custom-button:hover,
+.import-custom-button:hover {
+  background: var(--primary);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+}
+
+.export-custom-button:active,
+.import-custom-button:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 768px) {
+  .schema-actions {
+    flex-direction: column;
+  }
+  
+  .build-schema-button {
+    min-width: auto;
+  }
 }
 
 .content-grid {

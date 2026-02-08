@@ -46,6 +46,52 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
     setEditingField(newField);
   };
 
+  const handleDownloadSchema = () => {
+    const schemaData = {
+      name: schemaName,
+      fields: fields,
+      version: '1.0'
+    };
+    
+    const json = JSON.stringify(schemaData, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${schemaName.toLowerCase().replace(/\s+/g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleUploadSchema = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const json = e.target?.result as string;
+        const schemaData = JSON.parse(json);
+        
+        if (schemaData.fields && Array.isArray(schemaData.fields)) {
+          setSchemaName(schemaData.name || 'Imported Schema');
+          setFields(schemaData.fields);
+          setEditingField(null);
+        } else {
+          alert('Invalid schema file format');
+        }
+      } catch (error) {
+        alert('Error parsing schema file: ' + String(error));
+      }
+    };
+    reader.readAsText(file);
+    
+    // Reset the input so the same file can be uploaded again
+    event.target.value = '';
+  };
+
   const updateField = (id: string, updates: Partial<FieldConfig>) => {
     const updatedFields = fields.map(f => f.id === id ? { ...f, ...updates } : f);
     setFields(updatedFields);
@@ -227,7 +273,27 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
     <div className="schema-builder-overlay">
       <div className="schema-builder">
         <div className="schema-builder-header">
-          <h2>Schema Builder</h2>
+          <div>
+            <h2>Schema Builder</h2>
+            <div className="import-export-buttons">
+              <label className="import-button">
+                📥 Import JSON
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleUploadSchema}
+                  style={{ display: 'none' }}
+                />
+              </label>
+              <button 
+                className="export-button" 
+                onClick={handleDownloadSchema}
+                disabled={fields.length === 0}
+              >
+                📤 Export JSON
+              </button>
+            </div>
+          </div>
           <button className="close-button" onClick={onClose}>×</button>
         </div>
 

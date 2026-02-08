@@ -112,6 +112,43 @@ export const Home = () => {
     setEncodedString(encoded);
   };
 
+  const handleExportCustomSchemas = () => {
+    const data = JSON.stringify(customSchemas, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'custom-schemas.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportCustomSchemas = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const json = e.target?.result as string;
+        const imported = JSON.parse(json);
+        
+        // Validate and merge
+        if (typeof imported === 'object' && imported !== null) {
+          setCustomSchemas({ ...customSchemas, ...imported });
+        } else {
+          alert('Invalid custom schemas file format');
+        }
+      } catch (error) {
+        alert('Error parsing file: ' + String(error));
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
   const shareUrl = window.location.href;
 
   return (
@@ -155,9 +192,27 @@ export const Home = () => {
             selectedSchema={selectedSchema}
             onSchemaChange={handleSchemaChange}
           />
-          <button className="build-schema-button" onClick={() => setShowBuilder(true)}>
-            ⚡ Build Custom Schema
-          </button>
+          <div className="schema-actions">
+            <button className="build-schema-button" onClick={() => setShowBuilder(true)}>
+              ⚡ Build Custom Schema
+            </button>
+            {Object.keys(customSchemas).length > 0 && (
+              <div className="custom-schema-actions">
+                <button className="export-custom-button" onClick={handleExportCustomSchemas}>
+                  💾 Export Custom Schemas
+                </button>
+              </div>
+            )}
+            <label className="import-custom-button">
+              📂 Import Custom Schemas
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleImportCustomSchemas}
+                style={{ display: 'none' }}
+              />
+            </label>
+          </div>
         </div>
 
         <div className="content-grid">

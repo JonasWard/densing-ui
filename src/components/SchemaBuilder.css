@@ -32,10 +32,56 @@
   border-bottom: 1px solid var(--border);
 }
 
+.schema-builder-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .schema-builder-header h2 {
   margin: 0;
   font-size: 1.5rem;
   color: var(--text);
+}
+
+.import-export-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.import-button,
+.export-button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.import-button {
+  background: var(--success);
+  color: white;
+  display: inline-block;
+}
+
+.import-button:hover {
+  background: #059669;
+}
+
+.export-button {
+  background: var(--primary);
+  color: white;
+}
+
+.export-button:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.export-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .close-button {
