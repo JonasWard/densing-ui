@@ -215,9 +215,22 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
           </div>
         );
 
-      case 'union':
-        const discriminatorValue = value?.[field.discriminator.name] ?? field.discriminator.defaultValue;
+      case 'union': {
+        // Ensure value is properly initialized
+        const currentValue = value || {};
+        const discriminatorValue = currentValue[field.discriminator.name] ?? field.discriminator.defaultValue;
         const variantFields = field.variants[discriminatorValue] ?? [];
+        
+        // If value doesn't have the discriminator, initialize it properly
+        if (!currentValue[field.discriminator.name]) {
+          const initialValue: any = { [field.discriminator.name]: discriminatorValue };
+          variantFields.forEach((variantField) => {
+            initialValue[variantField.name] = getDefaultValue(variantField);
+          });
+          // Update parent with initialized value
+          setTimeout(() => onChange(initialValue), 0);
+        }
+        
         return (
           <div className="union-field">
             <div className="discriminator">
@@ -245,10 +258,10 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
                 <FieldInput
                   key={variantField.name}
                   field={variantField}
-                  value={value?.[variantField.name]}
+                  value={currentValue[variantField.name]}
                   onChange={(newVal) => {
                     onChange({
-                      ...value,
+                      ...currentValue,
                       [variantField.name]: newVal,
                     });
                   }}
@@ -257,6 +270,7 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
             </div>
           </div>
         );
+      }
 
       default:
         return <div className="unsupported">Unsupported field type: {(field as any).type}</div>;
