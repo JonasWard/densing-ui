@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { type DenseField, type IntField, type FixedPointField, type EnumField, type ObjectField, type UnionField } from 'densing';
 import './FieldInput.css';
 
@@ -8,6 +9,24 @@ interface FieldInputProps {
 }
 
 export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
+  // Initialize union fields properly
+  useEffect(() => {
+    if (field.type === 'union') {
+      const currentValue = value || {};
+      const discriminatorValue = currentValue[field.discriminator.name] ?? field.discriminator.defaultValue;
+      
+      // If value doesn't have the discriminator or variant fields, initialize it
+      if (!currentValue[field.discriminator.name]) {
+        const variantFields = field.variants[discriminatorValue] ?? [];
+        const initialValue: any = { [field.discriminator.name]: discriminatorValue };
+        variantFields.forEach((variantField) => {
+          initialValue[variantField.name] = getDefaultValue(variantField);
+        });
+        onChange(initialValue);
+      }
+    }
+  }, [field, value, onChange]);
+
   const renderInput = () => {
     switch (field.type) {
       case 'bool':
@@ -220,16 +239,6 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
         const currentValue = value || {};
         const discriminatorValue = currentValue[field.discriminator.name] ?? field.discriminator.defaultValue;
         const variantFields = field.variants[discriminatorValue] ?? [];
-        
-        // If value doesn't have the discriminator, initialize it properly
-        if (!currentValue[field.discriminator.name]) {
-          const initialValue: any = { [field.discriminator.name]: discriminatorValue };
-          variantFields.forEach((variantField) => {
-            initialValue[variantField.name] = getDefaultValue(variantField);
-          });
-          // Update parent with initialized value
-          setTimeout(() => onChange(initialValue), 0);
-        }
         
         return (
           <div className="union-field">
