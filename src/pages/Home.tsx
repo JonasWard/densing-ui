@@ -4,33 +4,51 @@ import { undensing, densing, type DenseSchema } from 'densing';
 import { SchemaForm } from '../components/SchemaForm';
 import { EncodedDisplay } from '../components/EncodedDisplay';
 import { SchemaSelector } from '../components/SchemaSelector';
+import { SchemaBuilder } from '../components/SchemaBuilder';
 import { exampleSchemas } from '../schemas/examples';
 import './Home.css';
+
+type SchemaEntry = {
+  name: string;
+  description: string;
+  schema: DenseSchema;
+  defaultData: any;
+};
 
 export const Home = () => {
   const { example, state } = useParams();
   const navigate = useNavigate();
 
+  // State for custom schemas
+  const [customSchemas, setCustomSchemas] = useState<Record<string, SchemaEntry>>({});
+  const [allSchemas, setAllSchemas] = useState<Record<string, SchemaEntry>>({ ...exampleSchemas });
+  const [showBuilder, setShowBuilder] = useState(false);
+
   // Initialize from URL params or defaults
-  const initialSchema = (example && example in exampleSchemas) 
-    ? example as keyof typeof exampleSchemas 
+  const initialSchema = (example && example in allSchemas) 
+    ? example
     : 'device';
   
-  const [selectedSchema, setSelectedSchema] = useState<keyof typeof exampleSchemas>(initialSchema);
-  const [currentSchema, setCurrentSchema] = useState<DenseSchema>(exampleSchemas[initialSchema].schema);
+  const [selectedSchema, setSelectedSchema] = useState<string>(initialSchema);
+  const [currentSchema, setCurrentSchema] = useState<DenseSchema>(allSchemas[initialSchema].schema);
   const [formData, setFormData] = useState<any>(() => {
     // Try to decode state from URL
-    if (state && example && example in exampleSchemas) {
+    if (state && example && example in allSchemas) {
       try {
-        return undensing(exampleSchemas[example as keyof typeof exampleSchemas].schema, state);
+        return undensing(allSchemas[example].schema, state);
       } catch (error) {
         console.error('Failed to decode state from URL:', error);
-        return exampleSchemas[initialSchema].defaultData;
+        return allSchemas[initialSchema].defaultData;
       }
     }
-    return exampleSchemas[initialSchema].defaultData;
+    return allSchemas[initialSchema].defaultData;
   });
   const [encodedString, setEncodedString] = useState<string>('');
+
+  // Update allSchemas when custom schemas change
+  useEffect(() => {
+    setAllSchemas({ ...exampleSchemas, ...customSchemas });
+  }, [customSchemas]);
 
   // Update URL when schema or data changes
   useEffect(() => {
@@ -41,31 +59,49 @@ export const Home = () => {
 
   // Decode state from URL when URL changes
   useEffect(() => {
-    if (state && example && example in exampleSchemas) {
+    if (state && example && example in allSchemas) {
       try {
-        const decoded = undensing(exampleSchemas[example as keyof typeof exampleSchemas].schema, state);
+        const decoded = undensing(allSchemas[example].schema, state);
         setFormData(decoded);
-        setSelectedSchema(example as keyof typeof exampleSchemas);
-        setCurrentSchema(exampleSchemas[example as keyof typeof exampleSchemas].schema);
+        setSelectedSchema(example);
+        setCurrentSchema(allSchemas[example].schema);
       } catch (error) {
         console.error('Failed to decode state from URL:', error);
       }
     }
-  }, [state, example]);
+  }, [state, example, allSchemas]);
 
-  const handleSchemaChange = (schemaKey: keyof typeof exampleSchemas) => {
+  const handleSchemaChange = (schemaKey: string) => {
     setSelectedSchema(schemaKey);
-    setCurrentSchema(exampleSchemas[schemaKey].schema);
-    setFormData(exampleSchemas[schemaKey].defaultData);
+    setCurrentSchema(allSchemas[schemaKey].schema);
+    setFormData(allSchemas[schemaKey].defaultData);
     setEncodedString('');
     
     // Update URL with new schema
     try {
-      const encoded = densing(exampleSchemas[schemaKey].schema, exampleSchemas[schemaKey].defaultData);
+      const encoded = densing(allSchemas[schemaKey].schema, allSchemas[schemaKey].defaultData);
       navigate(`/${schemaKey}/${encoded}`, { replace: true });
     } catch (error) {
       navigate(`/${schemaKey}`, { replace: true });
     }
+  };
+
+  const handleSchemaCreated = (schema: DenseSchema, defaultData: any, name: string) => {
+    const schemaKey = `custom_${Date.now()}`;
+    const newSchema: SchemaEntry = {
+      name: name,
+      description: 'Custom schema',
+      schema: schema,
+      defaultData: defaultData,
+    };
+    
+    setCustomSchemas({ ...customSchemas, [schemaKey]: newSchema });
+    setShowBuilder(false);
+    
+    // Switch to the new schema
+    setTimeout(() => {
+      handleSchemaChange(schemaKey);
+    }, 100);
   };
 
   const handleDataChange = (newData: any) => {
@@ -113,11 +149,16 @@ export const Home = () => {
       </header>
 
       <main className="app-main">
-        <SchemaSelector
-          schemas={exampleSchemas}
-          selectedSchema={selectedSchema}
-          onSchemaChange={handleSchemaChange}
-        />
+        <div className="schema-selector-wrapper">
+          <SchemaSelector
+            schemas={allSchemas}
+            selectedSchema={selectedSchema}
+            onSchemaChange={handleSchemaChange}
+          />
+          <button className="build-schema-button" onClick={() => setShowBuilder(true)}>
+            ⚡ Build Custom Schema
+          </button>
+        </div>
 
         <div className="content-grid">
           <div className="form-panel">
@@ -139,6 +180,13 @@ export const Home = () => {
           </div>
         </div>
       </main>
+
+      {showBuilder && (
+        <SchemaBuilder
+          onSchemaCreated={handleSchemaCreated}
+          onClose={() => setShowBuilder(false)}
+        />
+      )}
     </div>
   );
 };

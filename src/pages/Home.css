@@ -80,6 +80,34 @@
   padding: 2rem;
 }
 
+.schema-selector-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.build-schema-button {
+  padding: 1rem;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 0.75rem;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);
+}
+
+.build-schema-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(16, 185, 129, 0.3);
+}
+
+.build-schema-button:active {
+  transform: translateY(0);
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
