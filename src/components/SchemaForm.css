@@ -1,0 +1,58 @@
+.schema-form h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1.5rem;
+  color: var(--text);
+}
+
+.fields-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.validation-errors {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.validation-errors h3 {
+  color: var(--danger);
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.validation-errors ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.validation-errors li {
+  color: var(--danger);
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+}
+
+.encode-button {
+  width: 100%;
+  padding: 1rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.encode-button:hover {
+  background: var(--primary-dark);
+}
+
+.encode-button:active {
+  transform: scale(0.98);
+}
