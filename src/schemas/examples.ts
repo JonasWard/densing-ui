@@ -1,4 +1,4 @@
-import { schema, int, bool, fixed, enumeration, array, optional, object, union, getDefaultData, type DenseSchema } from 'densing';
+import { schema, int, bool, fixed, enumeration, array, optional, object, union } from 'densing';
 
 // Example 1: Device Configuration
 const deviceSchema = schema(

@@ -5,7 +5,7 @@
     "": {
       "name": "densing-ui",
       "dependencies": {
-        "densing": "^0.1.0",
+        "densing": "0.1.1",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
         "react-router-dom": "^7.13.0",
@@ -287,7 +287,7 @@
 
     "deep-is": ["deep-is@0.1.4", "", {}, "sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ=="],
 
-    "densing": ["densing@0.1.0", "", {}, "sha512-04DJ1li3mjnHw+340+pJOGSnNPdOYr0XSqronPEq0bxkOiJXJAQQOkwkEaQw8X9wb2R7ofQxyENFBN0+VuxPcA=="],
+    "densing": ["densing@0.1.1", "", {}, "sha512-LWDtf3hTG03iCYfNRgR3sakh1rtzkYVtLzmver3mr0yXS0tqcLM0fItJvqjR3o54lZAMWF2Yr4myXDM4KYyPQA=="],
 
     "electron-to-chromium": ["electron-to-chromium@1.5.286", "", {}, "sha512-9tfDXhJ4RKFNerfjdCcZfufu49vg620741MNs26a9+bhLThdB+plgMeou98CAaHu/WATj2iHOOHTp1hWtABj2A=="],
 

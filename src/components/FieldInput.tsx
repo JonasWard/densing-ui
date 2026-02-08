@@ -1,4 +1,4 @@
-import { type DenseField } from 'densing';
+import { type DenseField, type IntField, type FixedPointField, type EnumField, type ObjectField, type UnionField } from 'densing';
 import './FieldInput.css';
 
 interface FieldInputProps {
@@ -275,37 +275,37 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
 };
 
 const getDefaultValue = (field: DenseField): any => {
-  if ('defaultValue' in field) {
-    return field.defaultValue;
-  }
-  
   switch (field.type) {
     case 'bool':
       return false;
     case 'int':
-      return field.min;
+      return (field as IntField).min;
     case 'fixed':
-      return field.min;
+      return (field as FixedPointField).min;
     case 'enum':
-      return field.options[0];
+      return (field as EnumField).options[0];
     case 'array':
       return [];
     case 'enum_array':
       return [];
-    case 'object':
+    case 'object': {
+      const objectField = field as ObjectField;
       const obj: any = {};
-      field.fields.forEach((f) => {
+      objectField.fields.forEach((f) => {
         obj[f.name] = getDefaultValue(f);
       });
       return obj;
-    case 'union':
-      const discriminatorValue = field.discriminator.defaultValue;
-      const result: any = { [field.discriminator.name]: discriminatorValue };
-      const variantFields = field.variants[discriminatorValue] ?? [];
+    }
+    case 'union': {
+      const unionField = field as UnionField;
+      const discriminatorValue = unionField.discriminator.defaultValue;
+      const result: any = { [unionField.discriminator.name]: discriminatorValue };
+      const variantFields = unionField.variants[discriminatorValue] ?? [];
       variantFields.forEach((f) => {
         result[f.name] = getDefaultValue(f);
       });
       return result;
+    }
     case 'optional':
       return null;
     default:

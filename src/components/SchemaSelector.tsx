@@ -15,10 +15,10 @@ export const SchemaSelector = <T extends string>({ schemas, selectedSchema, onSc
           <button
             key={key}
             className={`schema-button ${selectedSchema === key ? 'active' : ''}`}
-            onClick={() => onSchemaChange(key)}
+            onClick={() => onSchemaChange(key as T)}
           >
-            <span className="schema-name">{schema.name}</span>
-            <span className="schema-description">{schema.description}</span>
+            <span className="schema-name">{(schema as any).name}</span>
+            <span className="schema-description">{(schema as any).description}</span>
           </button>
         ))}
       </div>
