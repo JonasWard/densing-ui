@@ -8,6 +8,8 @@ const App = () => {
     <HashRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/s/:shortName" element={<SchemaViewer />} />
+        <Route path="/s/:shortName/:stateBase64" element={<SchemaViewer />} />
         <Route path="/schema/:schemaBase64" element={<SchemaViewer />} />
         <Route path="/schema/:schemaBase64/:stateBase64" element={<SchemaViewer />} />
         <Route path="/:example/:state" element={<Home />} />

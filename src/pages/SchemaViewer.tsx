@@ -19,10 +19,11 @@ import { SchemaForm } from '../components/SchemaForm';
 import { EncodedDisplay } from '../components/EncodedDisplay';
 import { schema as createSchema } from 'densing';
 import type { FieldConfig } from '../components/SchemaBuilder';
+import schemaRegistry from '../../schema-registry.json';
 import './SchemaViewer.css';
 
 export const SchemaViewer = () => {
-  const { schemaBase64, stateBase64 } = useParams();
+  const { schemaBase64, stateBase64, shortName } = useParams();
   const navigate = useNavigate();
 
   const [schemaName, setSchemaName] = useState<string>('');
@@ -30,6 +31,7 @@ export const SchemaViewer = () => {
   const [formData, setFormData] = useState<any>(null);
   const [encodedString, setEncodedString] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [currentShortName, setCurrentShortName] = useState<string | null>(null);
 
   // Build DenseField from FieldConfig (copied from SchemaBuilder)
   const buildDenseField = (config: FieldConfig): any => {
@@ -131,15 +133,33 @@ export const SchemaViewer = () => {
 
   // Load schema from URL on mount
   useEffect(() => {
-    if (!schemaBase64) {
+    // Determine which parameter to use
+    let actualSchemaBase64: string | undefined;
+    let actualShortName: string | null = null;
+
+    if (shortName) {
+      // Using short name route
+      const registryEntry = (schemaRegistry as Record<string, string>)[shortName];
+      if (!registryEntry) {
+        setError(`Schema short name "${shortName}" not found in registry`);
+        setTimeout(() => navigate('/', { replace: true }), 3000);
+        return;
+      }
+      actualSchemaBase64 = registryEntry;
+      actualShortName = shortName;
+    } else if (schemaBase64) {
+      // Using full base64 route
+      actualSchemaBase64 = schemaBase64;
+    } else {
       navigate('/', { replace: true });
       return;
     }
 
     try {
       // Decode schema
-      const { name, fields } = decodeSchemaFromBase64(schemaBase64);
+      const { name, fields } = decodeSchemaFromBase64(actualSchemaBase64);
       setSchemaName(name);
+      setCurrentShortName(actualShortName);
 
       // Build DenseSchema
       const denseFields = fields.map(buildDenseField);
@@ -169,7 +189,7 @@ export const SchemaViewer = () => {
       setError('Failed to load schema from URL. The link may be invalid or corrupted.');
       setTimeout(() => navigate('/', { replace: true }), 3000);
     }
-  }, [schemaBase64, stateBase64, navigate]);
+  }, [schemaBase64, stateBase64, shortName, navigate]);
 
   // Encode data when it changes
   useEffect(() => {
@@ -186,10 +206,16 @@ export const SchemaViewer = () => {
 
   // Update URL when encoded string changes
   useEffect(() => {
-    if (schemaBase64 && encodedString) {
-      navigate(`/schema/${schemaBase64}/${encodedString}`, { replace: true });
+    if (encodedString) {
+      if (currentShortName) {
+        // Use short name route
+        navigate(`/s/${currentShortName}/${encodedString}`, { replace: true });
+      } else if (schemaBase64) {
+        // Use full base64 route
+        navigate(`/schema/${schemaBase64}/${encodedString}`, { replace: true });
+      }
     }
-  }, [schemaBase64, encodedString, navigate]);
+  }, [currentShortName, schemaBase64, encodedString, navigate]);
 
   const handleFormChange = (newData: any) => {
     setFormData(newData);
@@ -210,9 +236,13 @@ export const SchemaViewer = () => {
     setFormData(decoded);
   };
 
-  const shareUrl = `${window.location.origin}${window.location.pathname}#/schema/${schemaBase64}${
-    encodedString ? `/${encodedString}` : ''
-  }`;
+  const shareUrl = currentShortName
+    ? `${window.location.origin}${window.location.pathname}#/s/${currentShortName}${
+        encodedString ? `/${encodedString}` : ''
+      }`
+    : `${window.location.origin}${window.location.pathname}#/schema/${schemaBase64}${
+        encodedString ? `/${encodedString}` : ''
+      }`;
 
   if (error) {
     return (
