@@ -204,9 +204,9 @@ export const SchemaViewer = () => {
     }
   }, [denseSchema, formData]);
 
-  // Update URL when encoded string changes
+  // Update URL when encoded string changes (only if different from current URL)
   useEffect(() => {
-    if (encodedString) {
+    if (encodedString && encodedString !== stateBase64) {
       if (currentShortName) {
         // Use short name route
         navigate(`/s/${currentShortName}/${encodedString}`, { replace: true });
@@ -215,7 +215,7 @@ export const SchemaViewer = () => {
         navigate(`/schema/${schemaBase64}/${encodedString}`, { replace: true });
       }
     }
-  }, [currentShortName, schemaBase64, encodedString, navigate]);
+  }, [currentShortName, schemaBase64, encodedString, stateBase64, navigate]);
 
   const handleFormChange = (newData: any) => {
     setFormData(newData);
