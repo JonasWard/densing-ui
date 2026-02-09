@@ -149,6 +149,69 @@ export const Home = () => {
     event.target.value = '';
   };
 
+  const generateTypeDefinition = (data: any, indent: string = ''): string => {
+    if (data === null || data === undefined) return 'null';
+    
+    const dataType = typeof data;
+    
+    if (dataType === 'boolean') return 'boolean';
+    if (dataType === 'number') return 'number';
+    if (dataType === 'string') return 'string';
+    
+    if (Array.isArray(data)) {
+      if (data.length === 0) return 'any[]';
+      const itemType = generateTypeDefinition(data[0], indent);
+      return `${itemType}[]`;
+    }
+    
+    if (dataType === 'object') {
+      const entries = Object.entries(data);
+      if (entries.length === 0) return 'Record<string, any>';
+      
+      const fields = entries.map(([key, value]) => {
+        const valueType = generateTypeDefinition(value, indent + '  ');
+        return `${indent}  ${key}: ${valueType};`;
+      }).join('\n');
+      
+      return `{\n${fields}\n${indent}}`;
+    }
+    
+    return 'any';
+  };
+
+  const handleDownloadType = () => {
+    const currentEntry = allSchemas[selectedSchema];
+    if (!currentEntry) return;
+
+    // Convert schema name to PascalCase for type name
+    const typeName = currentEntry.name
+      .split(/[\s-_]+/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join('');
+
+    const typeDefinition = generateTypeDefinition(formData, typeName);
+    
+    const tsContent = `// Generated TypeScript type for ${currentEntry.name}
+// Schema: ${currentEntry.description}
+
+export type ${typeName} = ${typeDefinition};
+
+// Example usage:
+// import { ${typeName} } from './${selectedSchema}-type';
+// const data: ${typeName} = ${JSON.stringify(formData, null, 2)};
+`;
+    
+    const blob = new Blob([tsContent], { type: 'text/typescript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedSchema}-type.ts`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const shareUrl = window.location.href;
 
   return (
@@ -180,6 +243,13 @@ export const Home = () => {
               }}
             >
               🔗 Copy Share Link
+            </button>
+            <button
+              className="download-type-button"
+              onClick={handleDownloadType}
+              title="Download TypeScript type definition"
+            >
+              📝 Download Type
             </button>
           </div>
         </div>

@@ -75,6 +75,23 @@
   background: var(--primary-dark);
 }
 
+.download-type-button {
+  padding: 0.75rem 1.5rem;
+  background: var(--success);
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  white-space: nowrap;
+}
+
+.download-type-button:hover {
+  background: #059669;
+}
+
 .app-main {
   max-width: 1400px;
   margin: 0 auto;
