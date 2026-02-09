@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   schema,
   int,
@@ -57,28 +57,12 @@ export interface FieldConfig {
 interface SchemaBuilderProps {
   onSchemaCreated: (schema: DenseSchema, defaultData: any, name: string, fieldConfigs: FieldConfig[]) => void;
   onClose: () => void;
-  initialSchemaBase64?: string | null;
 }
 
-export const SchemaBuilder = ({ onSchemaCreated, onClose, initialSchemaBase64 }: SchemaBuilderProps) => {
+export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) => {
   const [schemaName, setSchemaName] = useState('Custom Schema');
   const [fields, setFields] = useState<FieldConfig[]>([]);
   const [editingField, setEditingField] = useState<FieldConfig | null>(null);
-
-  // Load initial schema from base64 if provided
-  useEffect(() => {
-    if (initialSchemaBase64) {
-      try {
-        const { name, fields: importedFields } = decodeSchemaFromBase64(initialSchemaBase64);
-        setSchemaName(name);
-        setFields(importedFields);
-        setEditingField(null);
-      } catch (error) {
-        console.error('Failed to load schema from URL:', error);
-        alert('Failed to load schema from URL. The link may be invalid or corrupted.');
-      }
-    }
-  }, [initialSchemaBase64]);
 
   const addField = () => {
     const newField: FieldConfig = {

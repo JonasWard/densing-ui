@@ -19,22 +19,13 @@ type SchemaEntry = {
 };
 
 export const Home = () => {
-  const { example, state, schemaBase64 } = useParams();
+  const { example, state } = useParams();
   const navigate = useNavigate();
 
   // State for custom schemas
   const [customSchemas, setCustomSchemas] = useState<Record<string, SchemaEntry>>({});
   const [allSchemas, setAllSchemas] = useState<Record<string, SchemaEntry>>({ ...exampleSchemas });
   const [showBuilder, setShowBuilder] = useState(false);
-  const [initialSchemaBase64, setInitialSchemaBase64] = useState<string | null>(null);
-
-  // Check if we're loading a schema from URL
-  useEffect(() => {
-    if (schemaBase64) {
-      setInitialSchemaBase64(schemaBase64);
-      setShowBuilder(true);
-    }
-  }, [schemaBase64]);
 
   // Initialize from URL params or defaults
   const initialSchema = example && example in allSchemas ? example : 'device';
@@ -345,20 +336,7 @@ export type ${typeName} = ${typeDefinition};
         </div>
       </main>
 
-      {showBuilder && (
-        <SchemaBuilder
-          onSchemaCreated={handleSchemaCreated}
-          onClose={() => {
-            setShowBuilder(false);
-            setInitialSchemaBase64(null);
-            // Clear schema route if we were on one
-            if (schemaBase64) {
-              navigate('/', { replace: true });
-            }
-          }}
-          initialSchemaBase64={initialSchemaBase64}
-        />
-      )}
+      {showBuilder && <SchemaBuilder onSchemaCreated={handleSchemaCreated} onClose={() => setShowBuilder(false)} />}
     </div>
   );
 };
