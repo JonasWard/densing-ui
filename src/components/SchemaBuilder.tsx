@@ -1,11 +1,36 @@
-import { useState } from 'react';
-import { schema, int, bool, fixed, enumeration, optional, array, enumArray, object, union, createRecursiveUnion, type DenseField, type DenseSchema } from 'densing';
+import { useState, useEffect } from 'react';
+import {
+  schema,
+  int,
+  bool,
+  fixed,
+  enumeration,
+  optional,
+  array,
+  enumArray,
+  object,
+  union,
+  createRecursiveUnion,
+  type DenseField,
+  type DenseSchema
+} from 'densing';
+import { encodeSchemaToBase64, decodeSchemaFromBase64 } from '../schemas/schema-codec';
 import './SchemaBuilder.css';
 
-interface FieldConfig {
+export interface FieldConfig {
   id: string;
   name: string;
-  type: 'bool' | 'int' | 'fixed' | 'enum' | 'optional' | 'array' | 'enum_array' | 'object' | 'union' | 'recursive_union';
+  type:
+    | 'bool'
+    | 'int'
+    | 'fixed'
+    | 'enum'
+    | 'optional'
+    | 'array'
+    | 'enum_array'
+    | 'object'
+    | 'union'
+    | 'recursive_union';
   // For int and fixed
   min?: number;
   max?: number;
@@ -30,20 +55,36 @@ interface FieldConfig {
 }
 
 interface SchemaBuilderProps {
-  onSchemaCreated: (schema: DenseSchema, defaultData: any, name: string) => void;
+  onSchemaCreated: (schema: DenseSchema, defaultData: any, name: string, fieldConfigs: FieldConfig[]) => void;
   onClose: () => void;
+  initialSchemaBase64?: string | null;
 }
 
-export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) => {
+export const SchemaBuilder = ({ onSchemaCreated, onClose, initialSchemaBase64 }: SchemaBuilderProps) => {
   const [schemaName, setSchemaName] = useState('Custom Schema');
   const [fields, setFields] = useState<FieldConfig[]>([]);
   const [editingField, setEditingField] = useState<FieldConfig | null>(null);
+
+  // Load initial schema from base64 if provided
+  useEffect(() => {
+    if (initialSchemaBase64) {
+      try {
+        const { name, fields: importedFields } = decodeSchemaFromBase64(initialSchemaBase64);
+        setSchemaName(name);
+        setFields(importedFields);
+        setEditingField(null);
+      } catch (error) {
+        console.error('Failed to load schema from URL:', error);
+        alert('Failed to load schema from URL. The link may be invalid or corrupted.');
+      }
+    }
+  }, [initialSchemaBase64]);
 
   const addField = () => {
     const newField: FieldConfig = {
       id: Date.now().toString(),
       name: `field${fields.length + 1}`,
-      type: 'bool',
+      type: 'bool'
     };
     setFields([...fields, newField]);
     setEditingField(newField);
@@ -55,7 +96,7 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
       fields: fields,
       version: '1.0'
     };
-    
+
     const json = JSON.stringify(schemaData, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -77,7 +118,7 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
       try {
         const json = e.target?.result as string;
         const schemaData = JSON.parse(json);
-        
+
         if (schemaData.fields && Array.isArray(schemaData.fields)) {
           setSchemaName(schemaData.name || 'Imported Schema');
           setFields(schemaData.fields);
@@ -90,13 +131,55 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
       }
     };
     reader.readAsText(file);
-    
+
     // Reset the input so the same file can be uploaded again
     event.target.value = '';
   };
 
+  const handleCopyBase64 = async () => {
+    if (fields.length === 0) {
+      alert('Add at least one field before exporting');
+      return;
+    }
+
+    try {
+      const base64 = encodeSchemaToBase64(schemaName, fields);
+      const shareUrl = `${window.location.origin}${window.location.pathname}#/schema/${base64}`;
+
+      await navigator.clipboard.writeText(shareUrl);
+      alert(
+        `Share URL copied to clipboard!\n\n` +
+          `URL length: ${shareUrl.length} characters\n` +
+          `Base64 size: ${base64.length} characters\n\n` +
+          `Anyone with this link can open your schema in the builder!`
+      );
+    } catch (error) {
+      alert('Error encoding schema: ' + String(error));
+    }
+  };
+
+  const handlePasteBase64 = async () => {
+    try {
+      const base64 = await navigator.clipboard.readText();
+      if (!base64.trim()) {
+        alert('Clipboard is empty');
+        return;
+      }
+
+      const { name, fields: importedFields } = decodeSchemaFromBase64(base64.trim());
+      setSchemaName(name);
+      setFields(importedFields);
+      setEditingField(null);
+      alert(`Schema "${name}" imported successfully!\n\n${importedFields.length} field(s) loaded.`);
+    } catch (error) {
+      alert(
+        'Error decoding schema from clipboard. Make sure you copied a valid schema base64 string.\n\n' + String(error)
+      );
+    }
+  };
+
   const updateField = (id: string, updates: Partial<FieldConfig>) => {
-    const updatedFields = fields.map(f => f.id === id ? { ...f, ...updates } : f);
+    const updatedFields = fields.map((f) => (f.id === id ? { ...f, ...updates } : f));
     setFields(updatedFields);
     if (editingField?.id === id) {
       setEditingField({ ...editingField, ...updates });
@@ -104,7 +187,7 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
   };
 
   const removeField = (id: string) => {
-    setFields(fields.filter(f => f.id !== id));
+    setFields(fields.filter((f) => f.id !== id));
     if (editingField?.id === id) {
       setEditingField(null);
     }
@@ -122,9 +205,9 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
     const baseField: FieldConfig = {
       id: Date.now().toString() + Math.random(),
       name: name,
-      type: type,
+      type: type
     };
-    
+
     switch (type) {
       case 'int':
         return { ...baseField, min: 0, max: 100 };
@@ -145,8 +228,8 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
           ...baseField,
           discriminatorField: { ...createDefaultField('enum', 'type'), options: ['A', 'B'] },
           variants: {
-            'A': [createDefaultField('bool', 'fieldA')],
-            'B': [createDefaultField('int', 'fieldB')]
+            A: [createDefaultField('bool', 'fieldA')],
+            B: [createDefaultField('int', 'fieldB')]
           }
         };
       case 'recursive_union':
@@ -155,8 +238,8 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
           options: ['leaf', 'branch'],
           maxDepth: 3,
           recursiveVariants: {
-            'leaf': [createDefaultField('int', 'value')],
-            'branch': [] // Will be filled with recursive references in UI
+            leaf: [createDefaultField('int', 'value')],
+            branch: [] // Will be filled with recursive references in UI
           }
         };
       default:
@@ -225,7 +308,7 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
             (recurse) => {
               const variantMap: Record<string, DenseField[]> = {};
               Object.entries(config.recursiveVariants!).forEach(([key, fields]) => {
-                variantMap[key] = fields.map(fieldConfig => {
+                variantMap[key] = fields.map((fieldConfig) => {
                   // Check if this is a special "recurse" marker field
                   if (fieldConfig.type === 'object' && fieldConfig.name === '__recurse__') {
                     return recurse(fieldConfig.fields?.[0]?.name ?? 'child');
@@ -269,7 +352,7 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
         return [];
       case 'object':
         const obj: any = {};
-        config.fields?.forEach(f => {
+        config.fields?.forEach((f) => {
           obj[f.name] = getDefaultValue(f);
         });
         return obj;
@@ -279,7 +362,7 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
           if (firstOption) {
             const result: any = { [config.discriminatorField.name]: firstOption };
             const variantFields = config.variants[firstOption] ?? [];
-            variantFields.forEach(f => {
+            variantFields.forEach((f) => {
               result[f.name] = getDefaultValue(f);
             });
             return result;
@@ -292,7 +375,7 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
           if (firstOption) {
             const result: any = { type: firstOption };
             const variantFields = config.recursiveVariants[firstOption] ?? [];
-            variantFields.forEach(f => {
+            variantFields.forEach((f) => {
               // Skip recurse markers in default value
               if (f.type === 'object' && f.name === '__recurse__') {
                 return;
@@ -317,13 +400,13 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
     try {
       const denseFields = fields.map(buildDenseField);
       const builtSchema = schema(...denseFields);
-      
+
       const defaultData: any = {};
-      fields.forEach(f => {
+      fields.forEach((f) => {
         defaultData[f.name] = getDefaultValue(f);
       });
 
-      onSchemaCreated(builtSchema, defaultData, schemaName);
+      onSchemaCreated(builtSchema, defaultData, schemaName, fields);
     } catch (error) {
       alert('Error creating schema: ' + String(error));
     }
@@ -338,23 +421,27 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
             <div className="import-export-buttons">
               <label className="import-button">
                 📥 Import JSON
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleUploadSchema}
-                  style={{ display: 'none' }}
-                />
+                <input type="file" accept=".json" onChange={handleUploadSchema} style={{ display: 'none' }} />
               </label>
-              <button 
-                className="export-button" 
-                onClick={handleDownloadSchema}
-                disabled={fields.length === 0}
-              >
+              <button className="export-button" onClick={handleDownloadSchema} disabled={fields.length === 0}>
                 📤 Export JSON
+              </button>
+              <button
+                className="base64-button"
+                onClick={handleCopyBase64}
+                disabled={fields.length === 0}
+                title="Copy schema as compact base64 string"
+              >
+                🔗 Copy Base64
+              </button>
+              <button className="base64-button" onClick={handlePasteBase64} title="Paste base64 string from clipboard">
+                📋 Paste Base64
               </button>
             </div>
           </div>
-          <button className="close-button" onClick={onClose}>×</button>
+          <button className="close-button" onClick={onClose}>
+            ×
+          </button>
         </div>
 
         <div className="schema-builder-content">
@@ -371,7 +458,9 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
           <div className="fields-section">
             <div className="fields-header">
               <h3>Fields</h3>
-              <button className="add-field-button" onClick={addField}>+ Add Field</button>
+              <button className="add-field-button" onClick={addField}>
+                + Add Field
+              </button>
             </div>
 
             <div className="fields-list">
@@ -387,19 +476,28 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
                   </div>
                   <div className="field-item-actions">
                     <button
-                      onClick={(e) => { e.stopPropagation(); moveField(index, 'up'); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveField(index, 'up');
+                      }}
                       disabled={index === 0}
                     >
                       ↑
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); moveField(index, 'down'); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveField(index, 'down');
+                      }}
                       disabled={index === fields.length - 1}
                     >
                       ↓
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); removeField(field.id); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeField(field.id);
+                      }}
                       className="remove-button"
                     >
                       ×
@@ -409,9 +507,7 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
               ))}
 
               {fields.length === 0 && (
-                <div className="empty-state">
-                  No fields yet. Click "Add Field" to get started.
-                </div>
+                <div className="empty-state">No fields yet. Click "Add Field" to get started.</div>
               )}
             </div>
           </div>
@@ -426,12 +522,10 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
         </div>
 
         <div className="schema-builder-footer">
-          <button className="cancel-button" onClick={onClose}>Cancel</button>
-          <button 
-            className="generate-button" 
-            onClick={handleGenerate}
-            disabled={fields.length === 0}
-          >
+          <button className="cancel-button" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="generate-button" onClick={handleGenerate} disabled={fields.length === 0}>
             Generate Schema
           </button>
         </div>
@@ -441,12 +535,12 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
 };
 
 // Separate component for editing a field
-const FieldEditor = ({ 
-  field, 
-  onChange, 
-  createDefaultField 
-}: { 
-  field: FieldConfig; 
+const FieldEditor = ({
+  field,
+  onChange,
+  createDefaultField
+}: {
+  field: FieldConfig;
   onChange: (field: Partial<FieldConfig>) => void;
   createDefaultField: (type: FieldConfig['type'], name?: string) => FieldConfig;
 }) => {
@@ -645,14 +739,14 @@ const FieldEditor = ({
 };
 
 // Component for configuring nested fields (optional, array items)
-const NestedFieldConfig = ({ 
+const NestedFieldConfig = ({
   title,
-  field, 
+  field,
   onChange,
   createDefaultField
-}: { 
+}: {
   title: string;
-  field: FieldConfig; 
+  field: FieldConfig;
   onChange: (field: FieldConfig) => void;
   createDefaultField: (type: FieldConfig['type'], name?: string) => FieldConfig;
 }) => {
@@ -695,19 +789,30 @@ const ObjectFieldsConfig = ({
     <div className="nested-config">
       <div className="object-fields-header">
         <h4>Object Fields:</h4>
-        <button className="add-nested-button" onClick={addField}>+ Add Field</button>
+        <button className="add-nested-button" onClick={addField}>
+          + Add Field
+        </button>
       </div>
-      
+
       <div className="object-fields-list">
         {fields.map((field, index) => (
           <div key={field.id} className="object-field-item">
-            <div 
+            <div
               className="object-field-summary"
               onClick={() => setEditingIndex(editingIndex === index ? null : index)}
             >
-              <span>{field.name} ({field.type})</span>
+              <span>
+                {field.name} ({field.type})
+              </span>
               <div className="object-field-actions">
-                <button onClick={(e) => { e.stopPropagation(); removeField(index); }}>×</button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeField(index);
+                  }}
+                >
+                  ×
+                </button>
               </div>
             </div>
             {editingIndex === index && (
@@ -746,7 +851,7 @@ const UnionConfig = ({
 
   const updateDiscriminator = (options: string[]) => {
     const newVariants: Record<string, FieldConfig[]> = {};
-    options.forEach(option => {
+    options.forEach((option) => {
       newVariants[option] = variants[option] ?? [createDefaultField('bool', `field${option}`)];
     });
     onChange({ ...discriminatorField, options }, newVariants);
@@ -759,7 +864,7 @@ const UnionConfig = ({
   return (
     <div className="nested-config">
       <h4>Union Configuration:</h4>
-      
+
       <div className="form-group">
         <label>Discriminator Name:</label>
         <input
@@ -776,7 +881,10 @@ const UnionConfig = ({
           key={discriminatorField.options?.join(',')}
           defaultValue={discriminatorField.options?.join(', ') ?? ''}
           onBlur={(e) => {
-            const options = e.target.value.split(',').map(o => o.trim()).filter(Boolean);
+            const options = e.target.value
+              .split(',')
+              .map((o) => o.trim())
+              .filter(Boolean);
             updateDiscriminator(options);
           }}
           placeholder="A, B, C"
@@ -785,16 +893,16 @@ const UnionConfig = ({
 
       <div className="union-variants">
         <h5>Variant Fields:</h5>
-        {discriminatorField.options?.map(option => (
+        {discriminatorField.options?.map((option) => (
           <div key={option} className="union-variant">
-            <div 
+            <div
               className="variant-header"
               onClick={() => setEditingVariant(editingVariant === option ? null : option)}
             >
-              <span>When {discriminatorField.name} = "{option}":</span>
-              <span className="variant-field-count">
-                {variants[option]?.length ?? 0} field(s)
+              <span>
+                When {discriminatorField.name} = "{option}":
               </span>
+              <span className="variant-field-count">{variants[option]?.length ?? 0} field(s)</span>
             </div>
             {editingVariant === option && (
               <ObjectFieldsConfig
@@ -828,7 +936,7 @@ const RecursiveUnionConfig = ({
 
   const updateOptions = (newOptions: string[]) => {
     const newVariants: Record<string, FieldConfig[]> = {};
-    newOptions.forEach(option => {
+    newOptions.forEach((option) => {
       newVariants[option] = recursiveVariants[option] ?? [createDefaultField('int', `field${option}`)];
     });
     onChange(newOptions, newVariants, maxDepth);
@@ -853,9 +961,10 @@ const RecursiveUnionConfig = ({
     <div className="nested-config">
       <h4>Recursive Union Configuration:</h4>
       <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-        Define a union that can reference itself. Use "Add Recursive Reference" to create fields that repeat the whole structure.
+        Define a union that can reference itself. Use "Add Recursive Reference" to create fields that repeat the whole
+        structure.
       </p>
-      
+
       <div className="form-group">
         <label>Max Depth:</label>
         <input
@@ -877,7 +986,10 @@ const RecursiveUnionConfig = ({
           key={options.join(',')}
           defaultValue={options.join(', ')}
           onBlur={(e) => {
-            const newOptions = e.target.value.split(',').map(o => o.trim()).filter(Boolean);
+            const newOptions = e.target.value
+              .split(',')
+              .map((o) => o.trim())
+              .filter(Boolean);
             updateOptions(newOptions);
           }}
           placeholder="leaf, branch, node"
@@ -889,16 +1001,14 @@ const RecursiveUnionConfig = ({
 
       <div className="union-variants">
         <h5>Variant Fields:</h5>
-        {options.map(option => (
+        {options.map((option) => (
           <div key={option} className="union-variant">
-            <div 
+            <div
               className="variant-header"
               onClick={() => setEditingVariant(editingVariant === option ? null : option)}
             >
               <span>When type = "{option}":</span>
-              <span className="variant-field-count">
-                {recursiveVariants[option]?.length ?? 0} field(s)
-              </span>
+              <span className="variant-field-count">{recursiveVariants[option]?.length ?? 0} field(s)</span>
             </div>
             {editingVariant === option && (
               <div style={{ padding: '1rem', background: 'var(--background)' }}>
@@ -971,9 +1081,9 @@ const RecursiveVariantFieldsConfig = ({
                   value={field.fields?.[0]?.name ?? 'child'}
                   onChange={(e) => updateRecurseName(index, e.target.value)}
                   placeholder="field name"
-                  style={{ 
-                    padding: '0.25rem 0.5rem', 
-                    border: '1px solid #0284c7', 
+                  style={{
+                    padding: '0.25rem 0.5rem',
+                    border: '1px solid #0284c7',
                     borderRadius: '0.25rem',
                     width: '150px'
                   }}
@@ -981,19 +1091,35 @@ const RecursiveVariantFieldsConfig = ({
                 />
               </div>
               <div className="object-field-actions">
-                <button onClick={(e) => { e.stopPropagation(); removeField(index); }}>×</button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeField(index);
+                  }}
+                >
+                  ×
+                </button>
               </div>
             </div>
           ) : (
             // Normal field
             <>
-              <div 
+              <div
                 className="object-field-summary"
                 onClick={() => setEditingIndex(editingIndex === index ? null : index)}
               >
-                <span>{field.name} ({field.type})</span>
+                <span>
+                  {field.name} ({field.type})
+                </span>
                 <div className="object-field-actions">
-                  <button onClick={(e) => { e.stopPropagation(); removeField(index); }}>×</button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeField(index);
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
               </div>
               {editingIndex === index && (
@@ -1013,7 +1139,7 @@ const RecursiveVariantFieldsConfig = ({
           )}
         </div>
       ))}
-      
+
       <button className="add-nested-button" onClick={addField} style={{ marginTop: '0.5rem' }}>
         + Add Regular Field
       </button>

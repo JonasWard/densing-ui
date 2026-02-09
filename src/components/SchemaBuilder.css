@@ -47,10 +47,12 @@
 .import-export-buttons {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .import-button,
-.export-button {
+.export-button,
+.base64-button {
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
   font-size: 0.75rem;
@@ -80,6 +82,20 @@
 }
 
 .export-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.base64-button {
+  background: #8b5cf6;
+  color: white;
+}
+
+.base64-button:hover:not(:disabled) {
+  background: #7c3aed;
+}
+
+.base64-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

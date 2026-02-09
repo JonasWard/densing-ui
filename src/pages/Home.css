@@ -92,6 +92,28 @@
   background: #059669;
 }
 
+.copy-schema-button {
+  padding: 0.75rem 1.5rem;
+  background: #8b5cf6;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  white-space: nowrap;
+}
+
+.copy-schema-button:hover:not(:disabled) {
+  background: #7c3aed;
+}
+
+.copy-schema-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .app-main {
   max-width: 1400px;
   margin: 0 auto;

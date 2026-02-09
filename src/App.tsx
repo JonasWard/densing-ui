@@ -7,6 +7,7 @@ const App = () => {
     <HashRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/schema/:schemaBase64" element={<Home />} />
         <Route path="/:example/:state" element={<Home />} />
       </Routes>
     </HashRouter>

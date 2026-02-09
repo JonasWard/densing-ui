@@ -4,7 +4,9 @@ import { undensing, densing, type DenseSchema } from 'densing';
 import { SchemaForm } from '../components/SchemaForm';
 import { EncodedDisplay } from '../components/EncodedDisplay';
 import { SchemaSelector } from '../components/SchemaSelector';
-import { SchemaBuilder } from '../components/SchemaBuilder';
+import { SchemaBuilder, type FieldConfig } from '../components/SchemaBuilder';
+import { encodeSchemaToBase64 } from '../schemas/schema-codec';
+import { schemaToFieldConfigs } from '../schemas/schema-to-config';
 import { exampleSchemas } from '../schemas/examples';
 import './Home.css';
 
@@ -13,22 +15,30 @@ type SchemaEntry = {
   description: string;
   schema: DenseSchema;
   defaultData: any;
+  fieldConfigs?: FieldConfig[]; // Store original field configs for base64 export
 };
 
 export const Home = () => {
-  const { example, state } = useParams();
+  const { example, state, schemaBase64 } = useParams();
   const navigate = useNavigate();
 
   // State for custom schemas
   const [customSchemas, setCustomSchemas] = useState<Record<string, SchemaEntry>>({});
   const [allSchemas, setAllSchemas] = useState<Record<string, SchemaEntry>>({ ...exampleSchemas });
   const [showBuilder, setShowBuilder] = useState(false);
+  const [initialSchemaBase64, setInitialSchemaBase64] = useState<string | null>(null);
+
+  // Check if we're loading a schema from URL
+  useEffect(() => {
+    if (schemaBase64) {
+      setInitialSchemaBase64(schemaBase64);
+      setShowBuilder(true);
+    }
+  }, [schemaBase64]);
 
   // Initialize from URL params or defaults
-  const initialSchema = (example && example in allSchemas) 
-    ? example
-    : 'device';
-  
+  const initialSchema = example && example in allSchemas ? example : 'device';
+
   const [selectedSchema, setSelectedSchema] = useState<string>(initialSchema);
   const [currentSchema, setCurrentSchema] = useState<DenseSchema>(allSchemas[initialSchema].schema);
   const [formData, setFormData] = useState<any>(() => {
@@ -76,7 +86,7 @@ export const Home = () => {
     setCurrentSchema(allSchemas[schemaKey].schema);
     setFormData(allSchemas[schemaKey].defaultData);
     setEncodedString('');
-    
+
     // Update URL with new schema
     try {
       const encoded = densing(allSchemas[schemaKey].schema, allSchemas[schemaKey].defaultData);
@@ -86,18 +96,19 @@ export const Home = () => {
     }
   };
 
-  const handleSchemaCreated = (schema: DenseSchema, defaultData: any, name: string) => {
+  const handleSchemaCreated = (schema: DenseSchema, defaultData: any, name: string, fieldConfigs: FieldConfig[]) => {
     const schemaKey = `custom_${Date.now()}`;
     const newSchema: SchemaEntry = {
       name: name,
       description: 'Custom schema',
       schema: schema,
       defaultData: defaultData,
+      fieldConfigs: fieldConfigs
     };
-    
+
     setCustomSchemas({ ...customSchemas, [schemaKey]: newSchema });
     setShowBuilder(false);
-    
+
     // Switch to the new schema
     setTimeout(() => {
       handleSchemaChange(schemaKey);
@@ -134,7 +145,7 @@ export const Home = () => {
       try {
         const json = e.target?.result as string;
         const imported = JSON.parse(json);
-        
+
         // Validate and merge
         if (typeof imported === 'object' && imported !== null) {
           setCustomSchemas({ ...customSchemas, ...imported });
@@ -151,31 +162,33 @@ export const Home = () => {
 
   const generateTypeDefinition = (data: any, indent: string = ''): string => {
     if (data === null || data === undefined) return 'null';
-    
+
     const dataType = typeof data;
-    
+
     if (dataType === 'boolean') return 'boolean';
     if (dataType === 'number') return 'number';
     if (dataType === 'string') return 'string';
-    
+
     if (Array.isArray(data)) {
       if (data.length === 0) return 'any[]';
       const itemType = generateTypeDefinition(data[0], indent);
       return `${itemType}[]`;
     }
-    
+
     if (dataType === 'object') {
       const entries = Object.entries(data);
       if (entries.length === 0) return 'Record<string, any>';
-      
-      const fields = entries.map(([key, value]) => {
-        const valueType = generateTypeDefinition(value, indent + '  ');
-        return `${indent}  ${key}: ${valueType};`;
-      }).join('\n');
-      
+
+      const fields = entries
+        .map(([key, value]) => {
+          const valueType = generateTypeDefinition(value, indent + '  ');
+          return `${indent}  ${key}: ${valueType};`;
+        })
+        .join('\n');
+
       return `{\n${fields}\n${indent}}`;
     }
-    
+
     return 'any';
   };
 
@@ -186,11 +199,11 @@ export const Home = () => {
     // Convert schema name to PascalCase for type name
     const typeName = currentEntry.name
       .split(/[\s-_]+/)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join('');
 
     const typeDefinition = generateTypeDefinition(formData, typeName);
-    
+
     const tsContent = `// Generated TypeScript type for ${currentEntry.name}
 // Schema: ${currentEntry.description}
 
@@ -200,7 +213,7 @@ export type ${typeName} = ${typeDefinition};
 // import { ${typeName} } from './${selectedSchema}-type';
 // const data: ${typeName} = ${JSON.stringify(formData, null, 2)};
 `;
-    
+
     const blob = new Blob([tsContent], { type: 'text/typescript' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -210,6 +223,38 @@ export type ${typeName} = ${typeDefinition};
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleCopySchemaUrl = async () => {
+    const currentEntry = allSchemas[selectedSchema];
+    if (!currentEntry) return;
+
+    try {
+      // Use stored fieldConfigs if available, otherwise convert from schema
+      let fieldConfigs = currentEntry.fieldConfigs;
+
+      if (!fieldConfigs) {
+        fieldConfigs = schemaToFieldConfigs(currentEntry.schema);
+
+        if (fieldConfigs.length === 0) {
+          alert('Unable to export this schema. It may use features not yet supported for export.');
+          return;
+        }
+      }
+
+      const base64 = encodeSchemaToBase64(currentEntry.name, fieldConfigs);
+      const shareUrl = `${window.location.origin}${window.location.pathname}#/schema/${base64}`;
+
+      await navigator.clipboard.writeText(shareUrl);
+      alert(
+        `Schema URL copied to clipboard!\n\n` +
+          `URL length: ${shareUrl.length} characters\n` +
+          `Base64 size: ${base64.length} characters\n\n` +
+          `Share this link to let others open this schema in the builder!`
+      );
+    } catch (error) {
+      alert('Error encoding schema: ' + String(error));
+    }
   };
 
   const shareUrl = window.location.href;
@@ -250,6 +295,9 @@ export type ${typeName} = ${typeDefinition};
               title="Download TypeScript type definition"
             >
               📝 Download Type
+            </button>
+            <button className="copy-schema-button" onClick={handleCopySchemaUrl} title="Copy schema builder URL">
+              🔗 Copy Schema URL
             </button>
           </div>
         </div>
@@ -297,7 +345,20 @@ export type ${typeName} = ${typeDefinition};
         </div>
       </main>
 
-      {showBuilder && <SchemaBuilder onSchemaCreated={handleSchemaCreated} onClose={() => setShowBuilder(false)} />}
+      {showBuilder && (
+        <SchemaBuilder
+          onSchemaCreated={handleSchemaCreated}
+          onClose={() => {
+            setShowBuilder(false);
+            setInitialSchemaBase64(null);
+            // Clear schema route if we were on one
+            if (schemaBase64) {
+              navigate('/', { replace: true });
+            }
+          }}
+          initialSchemaBase64={initialSchemaBase64}
+        />
+      )}
     </div>
   );
 };
