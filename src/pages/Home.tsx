@@ -331,6 +331,7 @@ export type ${typeName} = ${typeDefinition};
               data={formData}
               encodedString={encodedString}
               onDecode={handleDataChange}
+              shareUrl={shareUrl}
             />
           </div>
         </div>

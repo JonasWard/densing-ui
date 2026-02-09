@@ -321,6 +321,7 @@ export const SchemaViewer = () => {
               data={formData}
               encodedString={encodedString}
               onDecode={handleDecode}
+              shareUrl={shareUrl}
             />
           </div>
         </div>

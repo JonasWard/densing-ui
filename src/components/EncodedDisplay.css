@@ -179,6 +179,39 @@
   text-align: center;
 }
 
+.qr-code-section {
+  margin-bottom: 2rem;
+  background: var(--background);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.qr-code-section h3 {
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.qr-code-container {
+  display: inline-block;
+  padding: 1rem;
+  background: white;
+  border-radius: 0.5rem;
+  border: 2px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.qr-code-container svg {
+  display: block;
+}
+
+.qr-hint {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
 .json-comparison {
   margin-bottom: 2rem;
 }

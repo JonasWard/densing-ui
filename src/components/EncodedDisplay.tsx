@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { undensing, calculateDenseDataSize, type DenseSchema } from 'densing';
+import { QRCodeSVG } from 'qrcode.react';
 import './EncodedDisplay.css';
 
 interface EncodedDisplayProps {
@@ -7,9 +8,10 @@ interface EncodedDisplayProps {
   data: any;
   encodedString: string;
   onDecode: (data: any) => void;
+  shareUrl?: string;
 }
 
-export const EncodedDisplay = ({ schema, data, encodedString, onDecode }: EncodedDisplayProps) => {
+export const EncodedDisplay = ({ schema, data, encodedString, onDecode, shareUrl }: EncodedDisplayProps) => {
   const [decodeInput, setDecodeInput] = useState('');
   const [decodeError, setDecodeError] = useState<string>('');
 
@@ -104,6 +106,16 @@ export const EncodedDisplay = ({ schema, data, encodedString, onDecode }: Encode
                   Efficiency: {sizeInfo.efficiency.utilizationPercent.toFixed(1)}%
                 </span>
               </div>
+            </div>
+          )}
+
+          {shareUrl && (
+            <div className="qr-code-section">
+              <h3>Share URL QR Code:</h3>
+              <div className="qr-code-container">
+                <QRCodeSVG value={shareUrl} size={200} level="M" />
+              </div>
+              <p className="qr-hint">Scan to open this exact state</p>
             </div>
           )}
 
