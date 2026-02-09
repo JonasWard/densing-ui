@@ -453,38 +453,50 @@ const FieldEditor = ({
   return (
     <div className="field-editor">
       <h3>Edit Field</h3>
-      
-      <div className="form-group">
-        <label>Field Name:</label>
-        <input
-          type="text"
-          value={field.name}
-          onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="fieldName"
-        />
+
+      <div className="field-name-type-row">
+        <div className="form-group" style={{ flex: 1 }}>
+          <label>Field Name:</label>
+          <input
+            type="text"
+            value={field.name}
+            onChange={(e) => onChange({ name: e.target.value })}
+            placeholder="fieldName"
+          />
+        </div>
       </div>
 
       <div className="form-group">
         <label>Field Type:</label>
-        <select
-          value={field.type}
-          onChange={(e) => {
-            const newType = e.target.value as FieldConfig['type'];
-            const newField = createDefaultField(newType, field.name);
-            onChange(newField);
-          }}
-        >
-          <option value="bool">Boolean</option>
-          <option value="int">Integer</option>
-          <option value="fixed">Fixed Point Number</option>
-          <option value="enum">Enumeration</option>
-          <option value="optional">Optional</option>
-          <option value="array">Array</option>
-          <option value="enum_array">Enum Array</option>
-          <option value="object">Object</option>
-          <option value="union">Union</option>
-          <option value="recursive_union">Recursive Union</option>
-        </select>
+        <div className="type-radio-grid">
+          {[
+            { value: 'bool', label: 'Boolean' },
+            { value: 'int', label: 'Integer' },
+            { value: 'fixed', label: 'Fixed' },
+            { value: 'enum', label: 'Enum' },
+            { value: 'optional', label: 'Optional' },
+            { value: 'array', label: 'Array' },
+            { value: 'enum_array', label: 'Enum Array' },
+            { value: 'object', label: 'Object' },
+            { value: 'union', label: 'Union' },
+            { value: 'recursive_union', label: 'Recursive' }
+          ].map(({ value, label }) => (
+            <label key={value} className="type-radio-option">
+              <input
+                type="radio"
+                name={`field-type-${field.id}`}
+                value={value}
+                checked={field.type === value}
+                onChange={(e) => {
+                  const newType = e.target.value as FieldConfig['type'];
+                  const newField = createDefaultField(newType, field.name);
+                  onChange(newField);
+                }}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
       </div>
 
       {(field.type === 'int' || field.type === 'fixed') && (
@@ -526,9 +538,14 @@ const FieldEditor = ({
           <input
             type="text"
             defaultValue={field.options?.join(', ') ?? 'option1, option2'}
-            onBlur={(e) => onChange({ 
-              options: e.target.value.split(',').map(o => o.trim()).filter(Boolean)
-            })}
+            onBlur={(e) =>
+              onChange({
+                options: e.target.value
+                  .split(',')
+                  .map((o) => o.trim())
+                  .filter(Boolean)
+              })
+            }
             placeholder="option1, option2, option3"
           />
         </div>
@@ -582,7 +599,13 @@ const FieldEditor = ({
               type="text"
               defaultValue={field.enumField.options?.join(', ') ?? 'A, B, C'}
               onBlur={(e) => {
-                const updated = { ...field.enumField!, options: e.target.value.split(',').map(o => o.trim()).filter(Boolean) };
+                const updated = {
+                  ...field.enumField!,
+                  options: e.target.value
+                    .split(',')
+                    .map((o) => o.trim())
+                    .filter(Boolean)
+                };
                 onChange({ enumField: updated });
               }}
               placeholder="A, B, C"
