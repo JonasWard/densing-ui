@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { schema, int, bool, fixed, enumeration, optional, array, enumArray, object, union, type DenseField, type DenseSchema } from 'densing';
+import { schema, int, bool, fixed, enumeration, optional, array, enumArray, object, union, createRecursiveUnion, type DenseField, type DenseSchema } from 'densing';
 import './SchemaBuilder.css';
 
 interface FieldConfig {
   id: string;
   name: string;
-  type: 'bool' | 'int' | 'fixed' | 'enum' | 'optional' | 'array' | 'enum_array' | 'object' | 'union';
+  type: 'bool' | 'int' | 'fixed' | 'enum' | 'optional' | 'array' | 'enum_array' | 'object' | 'union' | 'recursive_union';
   // For int and fixed
   min?: number;
   max?: number;
@@ -24,6 +24,9 @@ interface FieldConfig {
   // For union
   discriminatorField?: FieldConfig;
   variants?: Record<string, FieldConfig[]>;
+  // For recursive_union
+  maxDepth?: number;
+  recursiveVariants?: Record<string, FieldConfig[]>; // Fields that can use 'recurse'
 }
 
 interface SchemaBuilderProps {
@@ -146,6 +149,16 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
             'B': [createDefaultField('int', 'fieldB')]
           }
         };
+      case 'recursive_union':
+        return {
+          ...baseField,
+          options: ['leaf', 'branch'],
+          maxDepth: 3,
+          recursiveVariants: {
+            'leaf': [createDefaultField('int', 'value')],
+            'branch': [] // Will be filled with recursive references in UI
+          }
+        };
       default:
         return baseField;
     }
@@ -204,6 +217,36 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
           A: [bool('fieldA')],
           B: [int('fieldB', 0, 100)]
         });
+      case 'recursive_union':
+        if (config.options && config.recursiveVariants) {
+          return createRecursiveUnion(
+            config.name,
+            config.options,
+            (recurse) => {
+              const variantMap: Record<string, DenseField[]> = {};
+              Object.entries(config.recursiveVariants!).forEach(([key, fields]) => {
+                variantMap[key] = fields.map(fieldConfig => {
+                  // Check if this is a special "recurse" marker field
+                  if (fieldConfig.type === 'object' && fieldConfig.name === '__recurse__') {
+                    return recurse(fieldConfig.fields?.[0]?.name ?? 'child');
+                  }
+                  return buildDenseField(fieldConfig);
+                });
+              });
+              return variantMap;
+            },
+            config.maxDepth ?? 3
+          );
+        }
+        return createRecursiveUnion(
+          config.name,
+          ['leaf', 'branch'],
+          (recurse) => ({
+            leaf: [int('value', 0, 100)],
+            branch: [recurse('left'), recurse('right')]
+          }),
+          3
+        );
       default:
         return bool(config.name);
     }
@@ -243,6 +286,23 @@ export const SchemaBuilder = ({ onSchemaCreated, onClose }: SchemaBuilderProps) 
           }
         }
         return {};
+      case 'recursive_union':
+        if (config.options && config.recursiveVariants) {
+          const firstOption = config.options[0];
+          if (firstOption) {
+            const result: any = { type: firstOption };
+            const variantFields = config.recursiveVariants[firstOption] ?? [];
+            variantFields.forEach(f => {
+              // Skip recurse markers in default value
+              if (f.type === 'object' && f.name === '__recurse__') {
+                return;
+              }
+              result[f.name] = getDefaultValue(f);
+            });
+            return result;
+          }
+        }
+        return { type: 'leaf', value: 0 };
       default:
         return null;
     }
@@ -423,6 +483,7 @@ const FieldEditor = ({
           <option value="enum_array">Enum Array</option>
           <option value="object">Object</option>
           <option value="union">Union</option>
+          <option value="recursive_union">Recursive Union</option>
         </select>
       </div>
 
@@ -543,6 +604,16 @@ const FieldEditor = ({
           discriminatorField={field.discriminatorField}
           variants={field.variants}
           onChange={(discriminator, variants) => onChange({ discriminatorField: discriminator, variants })}
+          createDefaultField={createDefaultField}
+        />
+      )}
+
+      {field.type === 'recursive_union' && (
+        <RecursiveUnionConfig
+          options={field.options ?? []}
+          recursiveVariants={field.recursiveVariants ?? {}}
+          maxDepth={field.maxDepth ?? 3}
+          onChange={(options, recursiveVariants, maxDepth) => onChange({ options, recursiveVariants, maxDepth })}
           createDefaultField={createDefaultField}
         />
       )}
@@ -712,6 +783,217 @@ const UnionConfig = ({
           </div>
         ))}
       </div>
+    </div>
+  );
+};
+
+// Component for recursive union configuration
+const RecursiveUnionConfig = ({
+  options,
+  recursiveVariants,
+  maxDepth,
+  onChange,
+  createDefaultField
+}: {
+  options: string[];
+  recursiveVariants: Record<string, FieldConfig[]>;
+  maxDepth: number;
+  onChange: (options: string[], variants: Record<string, FieldConfig[]>, maxDepth: number) => void;
+  createDefaultField: (type: FieldConfig['type'], name?: string) => FieldConfig;
+}) => {
+  const [editingVariant, setEditingVariant] = useState<string | null>(null);
+
+  const updateOptions = (newOptions: string[]) => {
+    const newVariants: Record<string, FieldConfig[]> = {};
+    newOptions.forEach(option => {
+      newVariants[option] = recursiveVariants[option] ?? [createDefaultField('int', `field${option}`)];
+    });
+    onChange(newOptions, newVariants, maxDepth);
+  };
+
+  const updateVariantFields = (variantKey: string, fields: FieldConfig[]) => {
+    onChange(options, { ...recursiveVariants, [variantKey]: fields }, maxDepth);
+  };
+
+  const addRecurseField = (variantKey: string) => {
+    const recurseMarker: FieldConfig = {
+      id: Date.now().toString() + Math.random(),
+      name: '__recurse__',
+      type: 'object',
+      fields: [{ ...createDefaultField('bool', 'child'), name: 'child' }]
+    };
+    const currentFields = recursiveVariants[variantKey] ?? [];
+    updateVariantFields(variantKey, [...currentFields, recurseMarker]);
+  };
+
+  return (
+    <div className="nested-config">
+      <h4>Recursive Union Configuration:</h4>
+      <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+        Define a union that can reference itself. Use "Add Recursive Reference" to create fields that repeat the whole structure.
+      </p>
+      
+      <div className="form-group">
+        <label>Max Depth:</label>
+        <input
+          type="number"
+          min="1"
+          max="10"
+          value={maxDepth}
+          onChange={(e) => onChange(options, recursiveVariants, parseInt(e.target.value) || 3)}
+        />
+        <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+          Maximum nesting levels (prevents infinite structures)
+        </small>
+      </div>
+
+      <div className="form-group">
+        <label>Variant Types (comma-separated):</label>
+        <input
+          type="text"
+          key={options.join(',')}
+          defaultValue={options.join(', ')}
+          onBlur={(e) => {
+            const newOptions = e.target.value.split(',').map(o => o.trim()).filter(Boolean);
+            updateOptions(newOptions);
+          }}
+          placeholder="leaf, branch, node"
+        />
+        <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+          Example: "leaf, branch" for a tree structure
+        </small>
+      </div>
+
+      <div className="union-variants">
+        <h5>Variant Fields:</h5>
+        {options.map(option => (
+          <div key={option} className="union-variant">
+            <div 
+              className="variant-header"
+              onClick={() => setEditingVariant(editingVariant === option ? null : option)}
+            >
+              <span>When type = "{option}":</span>
+              <span className="variant-field-count">
+                {recursiveVariants[option]?.length ?? 0} field(s)
+              </span>
+            </div>
+            {editingVariant === option && (
+              <div style={{ padding: '1rem', background: 'var(--background)' }}>
+                <button
+                  className="add-nested-button"
+                  onClick={() => addRecurseField(option)}
+                  style={{ marginBottom: '0.75rem' }}
+                >
+                  🔄 Add Recursive Reference
+                </button>
+                <RecursiveVariantFieldsConfig
+                  fields={recursiveVariants[option] ?? []}
+                  onChange={(fields) => updateVariantFields(option, fields)}
+                  createDefaultField={createDefaultField}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Component for managing fields in recursive union variants
+const RecursiveVariantFieldsConfig = ({
+  fields,
+  onChange,
+  createDefaultField
+}: {
+  fields: FieldConfig[];
+  onChange: (fields: FieldConfig[]) => void;
+  createDefaultField: (type: FieldConfig['type'], name?: string) => FieldConfig;
+}) => {
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  const addField = () => {
+    const newField = createDefaultField('int', `field${fields.length + 1}`);
+    onChange([...fields, newField]);
+    setEditingIndex(fields.length);
+  };
+
+  const removeField = (index: number) => {
+    onChange(fields.filter((_, i) => i !== index));
+    if (editingIndex === index) setEditingIndex(null);
+  };
+
+  const updateRecurseName = (index: number, newName: string) => {
+    const updated = [...fields];
+    if (updated[index].fields?.[0]) {
+      updated[index] = {
+        ...updated[index],
+        fields: [{ ...updated[index].fields![0], name: newName }]
+      };
+    }
+    onChange(updated);
+  };
+
+  return (
+    <div className="object-fields-list">
+      {fields.map((field, index) => (
+        <div key={field.id} className="object-field-item">
+          {field.name === '__recurse__' ? (
+            // Special display for recursive reference
+            <div className="object-field-summary" style={{ background: '#e0f2fe' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                <span style={{ fontWeight: 'bold', color: '#0284c7' }}>🔄 Recursive Reference</span>
+                <input
+                  type="text"
+                  value={field.fields?.[0]?.name ?? 'child'}
+                  onChange={(e) => updateRecurseName(index, e.target.value)}
+                  placeholder="field name"
+                  style={{ 
+                    padding: '0.25rem 0.5rem', 
+                    border: '1px solid #0284c7', 
+                    borderRadius: '0.25rem',
+                    width: '150px'
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+              <div className="object-field-actions">
+                <button onClick={(e) => { e.stopPropagation(); removeField(index); }}>×</button>
+              </div>
+            </div>
+          ) : (
+            // Normal field
+            <>
+              <div 
+                className="object-field-summary"
+                onClick={() => setEditingIndex(editingIndex === index ? null : index)}
+              >
+                <span>{field.name} ({field.type})</span>
+                <div className="object-field-actions">
+                  <button onClick={(e) => { e.stopPropagation(); removeField(index); }}>×</button>
+                </div>
+              </div>
+              {editingIndex === index && (
+                <div className="object-field-details">
+                  <FieldEditor
+                    field={field}
+                    onChange={(updates) => {
+                      const updated = [...fields];
+                      updated[index] = { ...field, ...updates };
+                      onChange(updated);
+                    }}
+                    createDefaultField={createDefaultField}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ))}
+      
+      <button className="add-nested-button" onClick={addField} style={{ marginTop: '0.5rem' }}>
+        + Add Regular Field
+      </button>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { schema, int, bool, fixed, enumeration, array, optional, object, union } from 'densing';
+import { schema, int, bool, fixed, enumeration, array, optional, object, union, createRecursiveUnion } from 'densing';
 
 // Example 1: Device Configuration
 const deviceSchema = schema(
@@ -59,6 +59,20 @@ const paletteSchema = schema(
       int('g', 0, 255),
       int('b', 0, 255)
     )
+  )
+);
+
+// Example 7: Expression Tree (Recursive)
+const expressionSchema = schema(
+  createRecursiveUnion(
+    'expr',
+    ['number', 'add', 'multiply'],
+    (recurse) => ({
+      number: [int('value', 0, 1000)],
+      add: [recurse('left'), recurse('right')],
+      multiply: [recurse('left'), recurse('right')]
+    }),
+    5 // max depth
   )
 );
 
@@ -132,6 +146,22 @@ export const exampleSchemas = {
         { r: 0, g: 255, b: 0 },
         { r: 0, g: 0, b: 255 }
       ]
+    }
+  },
+  expression: {
+    name: 'Expression Tree',
+    description: 'Recursive mathematical expression tree',
+    schema: expressionSchema,
+    defaultData: {
+      expr: {
+        type: 'multiply',
+        left: {
+          type: 'add',
+          left: { type: 'number', value: 5 },
+          right: { type: 'number', value: 3 }
+        },
+        right: { type: 'number', value: 2 }
+      }
     }
   }
 } as const;
