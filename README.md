@@ -30,7 +30,6 @@ Densing is a TypeScript library that uses bit-level packing to encode structured
 📈 **Size Analysis** - Compare encoded size vs JSON with detailed metrics:
 - Bit-level breakdown per field
 - Compression ratio
-- Efficiency metrics
 
 🔓 **Decode Functionality** - Paste encoded strings and decode them back to data
 

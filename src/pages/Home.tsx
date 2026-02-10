@@ -253,7 +253,15 @@ export type ${typeName} = ${typeDefinition};
   return (
     <div className="home">
       <header className="app-header">
-        <h1>🎯 Densing UI</h1>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%', justifyContent: 'center' }}>
+          <img
+            src="./densing.svg"
+            alt="Densing"
+            className="densing-logo"
+            style={{ width: '50px', height: '50px', borderRadius: 10 }}
+          />
+          <h1>Densing UI</h1>
+        </span>
         <p className="subtitle">Ultra-compact data serialization playground</p>
         <div className="share-section">
           <div className="share-url-container">
@@ -265,31 +273,33 @@ export type ${typeName} = ${typeDefinition};
               className="share-url-input"
               onClick={(e) => e.currentTarget.select()}
             />
-            <button
-              className="share-copy-button"
-              disabled={!encodedString}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(shareUrl);
-                } catch (error) {
-                  const input = document.querySelector('.share-url-input') as HTMLInputElement;
-                  input?.select();
-                  document.execCommand('copy');
-                }
-              }}
-            >
-              🔗 Copy Share Link
-            </button>
-            <button
-              className="download-type-button"
-              onClick={handleDownloadType}
-              title="Download TypeScript type definition"
-            >
-              📝 Download Type
-            </button>
-            <button className="copy-schema-button" onClick={handleCopySchemaUrl} title="Copy schema builder URL">
-              🔗 Copy Schema URL
-            </button>
+            <span style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between' }}>
+              <button
+                className="share-copy-button"
+                disabled={!encodedString}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(shareUrl);
+                  } catch (error) {
+                    const input = document.querySelector('.share-url-input') as HTMLInputElement;
+                    input?.select();
+                    document.execCommand('copy');
+                  }
+                }}
+              >
+                🔗
+              </button>
+              <button
+                className="download-type-button"
+                onClick={handleDownloadType}
+                title="Download TypeScript type definition"
+              >
+                📝
+              </button>
+              <button className="copy-schema-button" onClick={handleCopySchemaUrl} title="Copy schema builder URL">
+                📋
+              </button>
+            </span>
           </div>
         </div>
       </header>

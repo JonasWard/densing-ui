@@ -31,7 +31,6 @@
   margin-top: 1.5rem;
   display: flex;
   justify-content: center;
-  min-height: 88px;
 }
 
 .share-url-container {
@@ -43,7 +42,7 @@
 
 .share-url-input {
   flex: 1;
-  padding: 0.75rem 1rem;
+  padding: 0.25rem .25rem;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   font-size: 0.875rem;
@@ -59,7 +58,7 @@
 }
 
 .share-copy-button {
-  padding: 0.75rem 1.5rem;
+  padding: 0.75rem .25rem;
   background: var(--primary);
   color: white;
   border: none;

@@ -302,7 +302,7 @@ export const SchemaViewer = () => {
                 }
               }}
             >
-              🔗 Copy Share Link
+              🔗 Copy Link
             </button>
           </div>
         </div>

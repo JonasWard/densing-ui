@@ -61,6 +61,21 @@ export const EncodedDisplay = ({ schema, data, encodedString, onDecode, shareUrl
             <code className="encoded-string">{encodedString}</code>
           </div>
 
+          <div className="json-section">
+            <h3>JSON Equivalent:</h3>
+            <pre className="json-code">{JSON.stringify(data, null, 2)}</pre>
+          </div>
+
+          {shareUrl && (
+            <div className="qr-code-section">
+              <h3>Share URL QR Code:</h3>
+              <div className="qr-code-container">
+                <QRCodeSVG value={shareUrl} size={200} level="M" />
+              </div>
+              <p className="qr-hint">Scan to open this exact state</p>
+            </div>
+          )}
+
           {sizeInfo && (
             <div className="size-info">
               <h3>Size Analysis</h3>
@@ -94,35 +109,8 @@ export const EncodedDisplay = ({ schema, data, encodedString, onDecode, shareUrl
                   ))}
                 </ul>
               </div>
-
-              <div className="efficiency">
-                <div className="progress-bar">
-                  <div
-                    className="progress-fill"
-                    style={{ width: `${sizeInfo.efficiency.utilizationPercent}%` }}
-                  ></div>
-                </div>
-                <span className="efficiency-label">
-                  Efficiency: {sizeInfo.efficiency.utilizationPercent.toFixed(1)}%
-                </span>
-              </div>
             </div>
           )}
-
-          {shareUrl && (
-            <div className="qr-code-section">
-              <h3>Share URL QR Code:</h3>
-              <div className="qr-code-container">
-                <QRCodeSVG value={shareUrl} size={200} level="M" />
-              </div>
-              <p className="qr-hint">Scan to open this exact state</p>
-            </div>
-          )}
-
-          <div className="json-comparison">
-            <h3>JSON Equivalent:</h3>
-            <pre className="json-code">{JSON.stringify(data, null, 2)}</pre>
-          </div>
         </>
       ) : (
         <div className="placeholder">
