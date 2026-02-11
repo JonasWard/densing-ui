@@ -273,7 +273,7 @@ export type ${typeName} = ${typeDefinition};
               className="share-url-input"
               onClick={(e) => e.currentTarget.select()}
             />
-            <span style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between' }}>
+            <span style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
               <button
                 className="share-copy-button"
                 disabled={!encodedString}

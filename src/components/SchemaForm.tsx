@@ -18,22 +18,6 @@ export const SchemaForm = ({ schema, data, onDataChange, onEncode }: SchemaFormP
     onDataChange(newData);
   };
 
-  const handleEncode = () => {
-    const validation = validate(schema, data);
-    if (!validation.valid) {
-      setValidationErrors(validation.errors);
-      return;
-    }
-    
-    setValidationErrors([]);
-    try {
-      const encoded = densing(schema, data);
-      onEncode(encoded);
-    } catch (error) {
-      setValidationErrors([{ path: 'general', message: String(error) }]);
-    }
-  };
-
   // Auto-encode on data change
   useEffect(() => {
     const validation = validate(schema, data);
@@ -53,7 +37,7 @@ export const SchemaForm = ({ schema, data, onDataChange, onEncode }: SchemaFormP
   return (
     <div className="schema-form">
       <h2>Schema Fields</h2>
-      
+
       <div className="fields-container">
         {schema.fields.map((field: DenseField) => (
           <FieldInput
@@ -78,10 +62,6 @@ export const SchemaForm = ({ schema, data, onDataChange, onEncode }: SchemaFormP
           </ul>
         </div>
       )}
-
-      <button className="encode-button" onClick={handleEncode}>
-        🔒 Encode Data
-      </button>
     </div>
   );
 };

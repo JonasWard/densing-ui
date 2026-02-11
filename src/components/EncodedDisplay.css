@@ -4,10 +4,6 @@
   color: var(--text);
 }
 
-.encoded-value {
-  margin-bottom: 2rem;
-}
-
 .encoded-header {
   display: flex;
   align-items: center;
@@ -22,9 +18,8 @@
 }
 
 .copy-button {
-  padding: 0.5rem 1rem;
-  background: var(--secondary);
-  color: white;
+  padding: .25rem;
+  background: transparent;
   border: none;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -37,9 +32,12 @@
 }
 
 .encoded-string {
-  display: block;
+  display: grid;
   width: 100%;
-  padding: 1rem;
+  padding: .25rem .5rem;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
   background: #f1f5f9;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
@@ -48,6 +46,7 @@
   color: var(--primary);
   word-break: break-all;
   font-weight: 600;
+  margin-bottom: 1rem;
 }
 
 .placeholder {

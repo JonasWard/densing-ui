@@ -51,18 +51,7 @@ export const EncodedDisplay = ({ schema, data, encodedString, onDecode, shareUrl
 
       {encodedString ? (
         <>
-          <div className="encoded-value">
-            <div className="encoded-header">
-              <span className="label">Base64 Encoded:</span>
-              <button className="copy-button" onClick={copyToClipboard} title="Copy to clipboard">
-                📋 Copy
-              </button>
-            </div>
-            <code className="encoded-string">{encodedString}</code>
-          </div>
-
           <div className="json-section">
-            <h3>JSON Equivalent:</h3>
             <pre className="json-code">{JSON.stringify(data, null, 2)}</pre>
           </div>
 
@@ -72,9 +61,17 @@ export const EncodedDisplay = ({ schema, data, encodedString, onDecode, shareUrl
               <div className="qr-code-container">
                 <QRCodeSVG value={shareUrl} size={200} level="M" />
               </div>
+
               <p className="qr-hint">Scan to open this exact state</p>
             </div>
           )}
+
+          <code className="encoded-string">
+            {encodedString}
+            <button className="copy-button" onClick={copyToClipboard} title="Copy to clipboard">
+              📋 Copy
+            </button>
+          </code>
 
           {sizeInfo && (
             <div className="size-info">
