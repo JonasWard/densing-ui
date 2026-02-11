@@ -12,13 +12,13 @@ import {
   array,
   enumArray,
   object,
-  union
+  union,
+  type DenseField,
+  schema
 } from 'densing';
-import { decodeSchemaFromBase64 } from '../schemas/schema-codec';
+import { decodeSchemaFromBase64 } from '../schemas/schema-codec-zstd';
 import { SchemaForm } from '../components/SchemaForm';
 import { EncodedDisplay } from '../components/EncodedDisplay';
-import { schema as createSchema } from 'densing';
-import type { FieldConfig } from '../components/SchemaBuilder';
 import schemaRegistry from '../../schema-registry.json';
 import './SchemaViewer.css';
 
@@ -33,8 +33,8 @@ export const SchemaViewer = () => {
   const [error, setError] = useState<string | null>(null);
   const [currentShortName, setCurrentShortName] = useState<string | null>(null);
 
-  // Build DenseField from FieldConfig (copied from SchemaBuilder)
-  const buildDenseField = (config: FieldConfig): any => {
+  // Build DenseField from DenseField (copied from SchemaBuilder)
+  const buildDenseField = (config: DenseField): any => {
     switch (config.type) {
       case 'bool':
         return bool(config.name);
@@ -45,28 +45,18 @@ export const SchemaViewer = () => {
       case 'enum':
         return enumeration(config.name, config.options ?? ['option1', 'option2']);
       case 'optional':
-        if (config.wrappedField) {
-          return optional(config.name, buildDenseField(config.wrappedField));
+        if (config.field) {
+          return optional(config.name, buildDenseField(config.field));
         }
         return optional(config.name, bool('value'));
       case 'array':
-        if (config.wrappedField) {
-          return array(
-            config.name,
-            config.minLength ?? 0,
-            config.maxLength ?? 10,
-            buildDenseField(config.wrappedField)
-          );
+        if (config.items) {
+          return array(config.name, config.minLength ?? 0, config.maxLength ?? 10, buildDenseField(config.items));
         }
         return array(config.name, 0, 10, int('item', 0, 100));
       case 'enum_array':
-        if (config.enumField) {
-          return enumArray(
-            config.name,
-            buildDenseField(config.enumField),
-            config.minLength ?? 0,
-            config.maxLength ?? 10
-          );
+        if (config.enum) {
+          return enumArray(config.name, buildDenseField(config.enum), config.minLength ?? 0, config.maxLength ?? 10);
         }
         return enumArray(config.name, enumeration('item', ['A', 'B', 'C']), 0, 10);
       case 'object':
@@ -75,8 +65,8 @@ export const SchemaViewer = () => {
         }
         return object(config.name, bool('field1'));
       case 'union':
-        if (config.discriminatorField && config.variants) {
-          const discriminator = buildDenseField(config.discriminatorField);
+        if (config.discriminator && config.variants) {
+          const discriminator = buildDenseField(config.discriminator);
           const variantMap: Record<string, any[]> = {};
           Object.entries(config.variants).forEach(([key, fields]) => {
             variantMap[key] = fields.map(buildDenseField);
@@ -92,36 +82,30 @@ export const SchemaViewer = () => {
     }
   };
 
-  const getDefaultValue = (config: FieldConfig): any => {
-    switch (config.type) {
+  const getDefaultValue = (denseField: DenseField): any => {
+    switch (denseField.type) {
       case 'bool':
         return false;
       case 'int':
-        return config.min ?? 0;
+        return denseField.min ?? 0;
       case 'fixed':
-        return config.min ?? 0;
+        return denseField.min ?? 0;
       case 'enum':
-        return config.options?.[0] ?? 'option1';
+        return denseField.options?.[0] ?? 'option1';
       case 'optional':
         return null;
       case 'array':
       case 'enum_array':
         return [];
       case 'object':
-        const obj: any = {};
-        config.fields?.forEach((f) => {
-          obj[f.name] = getDefaultValue(f);
-        });
-        return obj;
+        return Object.fromEntries(denseField.fields.map((f) => [f.name, getDefaultValue(f)]));
       case 'union':
-        if (config.discriminatorField && config.variants) {
-          const firstOption = config.discriminatorField.options?.[0];
+        if (denseField.discriminator && denseField.variants) {
+          const firstOption = denseField.discriminator.options?.[0];
           if (firstOption) {
-            const result: any = { [config.discriminatorField.name]: firstOption };
-            const variantFields = config.variants[firstOption] ?? [];
-            variantFields.forEach((f) => {
-              result[f.name] = getDefaultValue(f);
-            });
+            const result: any = { [denseField.discriminator.name]: firstOption };
+            const variantFields = denseField.variants[firstOption] ?? [];
+            variantFields.forEach((f) => (result[f.name] = getDefaultValue(f)));
             return result;
           }
         }
@@ -133,62 +117,66 @@ export const SchemaViewer = () => {
 
   // Load schema from URL on mount
   useEffect(() => {
-    // Determine which parameter to use
-    let actualSchemaBase64: string | undefined;
-    let actualShortName: string | null = null;
+    const loadSchema = async () => {
+      // Determine which parameter to use
+      let actualSchemaBase64: string | undefined;
+      let actualShortName: string | null = null;
 
-    if (shortName) {
-      // Using short name route
-      const registryEntry = (schemaRegistry as Record<string, string>)[shortName];
-      if (!registryEntry) {
-        setError(`Schema short name "${shortName}" not found in registry`);
-        setTimeout(() => navigate('/', { replace: true }), 3000);
+      if (shortName) {
+        // Using short name route
+        const registryEntry = (schemaRegistry as Record<string, string>)[shortName];
+        if (!registryEntry) {
+          setError(`Schema short name "${shortName}" not found in registry`);
+          setTimeout(() => navigate('/', { replace: true }), 3000);
+          return;
+        }
+        actualSchemaBase64 = registryEntry;
+        actualShortName = shortName;
+      } else if (schemaBase64) {
+        // Using full base64 route
+        actualSchemaBase64 = schemaBase64;
+      } else {
+        navigate('/', { replace: true });
         return;
       }
-      actualSchemaBase64 = registryEntry;
-      actualShortName = shortName;
-    } else if (schemaBase64) {
-      // Using full base64 route
-      actualSchemaBase64 = schemaBase64;
-    } else {
-      navigate('/', { replace: true });
-      return;
-    }
 
-    try {
-      // Decode schema
-      const { name, fields } = decodeSchemaFromBase64(actualSchemaBase64);
-      setSchemaName(name);
-      setCurrentShortName(actualShortName);
+      try {
+        // Decode schema (now async)
+        const { name, fields } = await decodeSchemaFromBase64(actualSchemaBase64);
+        setSchemaName(name);
+        setCurrentShortName(actualShortName);
 
-      // Build DenseSchema
-      const denseFields = fields.map(buildDenseField);
-      const builtSchema = createSchema(...denseFields);
-      setDenseSchema(builtSchema);
+        // Build DenseSchema
+        const denseFields = fields.map(buildDenseField);
+        const builtSchema = schema(...denseFields);
+        setDenseSchema(builtSchema);
 
-      // Generate default data
-      const defaultDataObj: any = {};
-      fields.forEach((f) => {
-        defaultDataObj[f.name] = getDefaultValue(f);
-      });
+        // Generate default data
+        const defaultDataObj: any = {};
+        fields.forEach((f) => {
+          defaultDataObj[f.name] = getDefaultValue(f);
+        });
 
-      // Decode state if provided
-      if (stateBase64) {
-        try {
-          const decodedState = undensing(builtSchema, stateBase64);
-          setFormData(decodedState);
-        } catch (stateError) {
-          console.error('Failed to decode state:', stateError);
+        // Decode state if provided
+        if (stateBase64) {
+          try {
+            const decodedState = undensing(builtSchema, stateBase64);
+            setFormData(decodedState);
+          } catch (stateError) {
+            console.error('Failed to decode state:', stateError);
+            setFormData(defaultDataObj);
+          }
+        } else {
           setFormData(defaultDataObj);
         }
-      } else {
-        setFormData(defaultDataObj);
+      } catch (error) {
+        console.error('Failed to load schema:', error);
+        setError('Failed to load schema from URL. The link may be invalid or corrupted.');
+        setTimeout(() => navigate('/', { replace: true }), 3000);
       }
-    } catch (error) {
-      console.error('Failed to load schema:', error);
-      setError('Failed to load schema from URL. The link may be invalid or corrupted.');
-      setTimeout(() => navigate('/', { replace: true }), 3000);
-    }
+    };
+
+    loadSchema();
   }, [schemaBase64, stateBase64, shortName, navigate]);
 
   // Encode data when it changes

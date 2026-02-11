@@ -223,3 +223,62 @@ select:focus {
   border-radius: 0.375rem;
   font-size: 0.875rem;
 }
+
+.pointer-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.pointer-select select {
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  background: #f8fafc;
+  color: var(--text);
+  cursor: not-allowed;
+}
+
+.pointer-hint {
+  font-size: 0.75rem;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 500;
+}
+
+.pointer-info {
+  padding: 0.75rem;
+  background: var(--background);
+  border-radius: 0.375rem;
+  border: 1px solid var(--border);
+}
+
+.pointer-info .info-text {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.pointer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem;
+  background: #eff6ff;
+  border: 1px dashed #3b82f6;
+  border-radius: 0.375rem;
+}
+
+.pointer-label {
+  font-size: 0.75rem;
+  color: #3b82f6;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}

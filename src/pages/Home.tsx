@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { undensing, densing, type DenseSchema } from 'densing';
+import { undensing, densing, type DenseSchema, type DenseField } from 'densing';
 import { SchemaForm } from '../components/SchemaForm';
 import { EncodedDisplay } from '../components/EncodedDisplay';
 import { SchemaSelector } from '../components/SchemaSelector';
-import { SchemaBuilder, type FieldConfig } from '../components/SchemaBuilder';
-import { encodeSchemaToBase64 } from '../schemas/schema-codec';
-import { schemaToFieldConfigs } from '../schemas/schema-to-config';
+import { SchemaBuilder } from '../components/SchemaBuilder';
+import { encodeSchemaToBase64 } from '../schemas/schema-codec-zstd';
+import { schemaToDenseFields } from '../schemas/schema-to-config';
 import { exampleSchemas } from '../schemas/examples';
 import './Home.css';
 
@@ -15,7 +15,7 @@ type SchemaEntry = {
   description: string;
   schema: DenseSchema;
   defaultData: any;
-  fieldConfigs?: FieldConfig[]; // Store original field configs for base64 export
+  DenseFields?: DenseField[]; // Store original field configs for base64 export
 };
 
 export const Home = () => {
@@ -87,14 +87,14 @@ export const Home = () => {
     }
   };
 
-  const handleSchemaCreated = (schema: DenseSchema, defaultData: any, name: string, fieldConfigs: FieldConfig[]) => {
+  const handleSchemaCreated = (schema: DenseSchema, defaultData: any, name: string, DenseFields: DenseField[]) => {
     const schemaKey = `custom_${Date.now()}`;
     const newSchema: SchemaEntry = {
       name: name,
       description: 'Custom schema',
       schema: schema,
       defaultData: defaultData,
-      fieldConfigs: fieldConfigs
+      DenseFields: DenseFields
     };
 
     setCustomSchemas({ ...customSchemas, [schemaKey]: newSchema });
@@ -221,19 +221,19 @@ export type ${typeName} = ${typeDefinition};
     if (!currentEntry) return;
 
     try {
-      // Use stored fieldConfigs if available, otherwise convert from schema
-      let fieldConfigs = currentEntry.fieldConfigs;
+      // Use stored DenseFields if available, otherwise convert from schema
+      let fields = currentEntry.DenseFields;
 
-      if (!fieldConfigs) {
-        fieldConfigs = schemaToFieldConfigs(currentEntry.schema);
+      if (!fields) {
+        fields = schemaToDenseFields(currentEntry.schema);
 
-        if (fieldConfigs.length === 0) {
+        if (fields.length === 0) {
           alert('Unable to export this schema. It may use features not yet supported for export.');
           return;
         }
       }
 
-      const base64 = encodeSchemaToBase64(currentEntry.name, fieldConfigs);
+      const base64 = await encodeSchemaToBase64(currentEntry.name, fields);
       const shareUrl = `${window.location.origin}${window.location.pathname}#/schema/${base64}`;
 
       await navigator.clipboard.writeText(shareUrl);

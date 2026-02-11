@@ -1,4 +1,4 @@
-import { schema, int, bool, fixed, enumeration, array, optional, object, union, createRecursiveUnion } from 'densing';
+import { schema, int, bool, fixed, enumeration, array, optional, object, union, pointer } from 'densing';
 
 // Example 1: Device Configuration
 const deviceSchema = schema(
@@ -18,26 +18,17 @@ const userSchema = schema(
 
 // Example 3: Network Configuration
 const networkSchema = schema(
-  object(
-    'network',
-    enumeration('protocol', ['http', 'https', 'ws', 'wss']),
-    int('port', 1024, 65535),
-    bool('ssl')
-  ),
+  object('network', enumeration('protocol', ['http', 'https', 'ws', 'wss']), int('port', 1024, 65535), bool('ssl')),
   array('allowedIPs', 0, 5, int('ip', 0, 255))
 );
 
 // Example 4: Action with Union
 const actionSchema = schema(
-  union(
-    'action',
-    enumeration('type', ['start', 'stop', 'pause']),
-    {
-      start: [int('delay', 0, 60)],
-      stop: [bool('force')],
-      pause: [int('duration', 0, 3600)]
-    }
-  )
+  union('action', enumeration('type', ['start', 'stop', 'pause']), {
+    start: [int('delay', 0, 60)],
+    stop: [bool('force')],
+    pause: [int('duration', 0, 3600)]
+  })
 );
 
 // Example 5: IoT Sensor Data
@@ -52,28 +43,24 @@ const sensorSchema = schema(
 
 // Example 6: Color Palette
 const paletteSchema = schema(
-  array('colors', 0, 10, 
-    object(
-      'color',
-      int('r', 0, 255),
-      int('g', 0, 255),
-      int('b', 0, 255)
-    )
-  )
+  array('colors', 0, 10, object('color', int('r', 0, 255), int('g', 0, 255), int('b', 0, 255)))
 );
 
-// Example 7: Expression Tree (Recursive)
+// Example 7: Expression Tree (Recursive) - Commented out, requires createRecursiveUnion from densing
 const expressionSchema = schema(
-  createRecursiveUnion(
-    'expr',
-    ['number', 'add', 'multiply'],
-    (recurse) => ({
-      number: [int('value', 0, 1000)],
-      add: [recurse('left'), recurse('right')],
-      multiply: [recurse('left'), recurse('right')]
-    }),
-    5 // max depth
-  )
+  union('expr', enumeration('type', ['number', 'add', 'multiply']), {
+    number: [int('value', 0, 1000)],
+    add: [pointer('left', 'expr'), pointer('right', 'expr')],
+    multiply: [pointer('left', 'expr'), pointer('right', 'expr')]
+  })
+);
+
+const citaSchema = schema(
+  int('length', 0, 7500),
+  int('width', 0, 500),
+  int('height', 0, 500),
+  enumeration('typology', ['barn', 'school', 'house', 'church', 'castle']),
+  object('offset', int('start', -256, 255), int('end', -256, 255))
 );
 
 export const exampleSchemas = {
@@ -161,6 +148,18 @@ export const exampleSchemas = {
           right: { type: 'number', value: 3 }
         },
         right: { type: 'number', value: 2 }
+      }
+    }
+  },
+  cita: {
+    name: 'CITA',
+    description: 'CITA configuration',
+    schema: citaSchema,
+    defaultData: {
+      cita: {
+        enabled: true,
+        temperature: 23.5,
+        mode: 'performance'
       }
     }
   }

@@ -61,6 +61,7 @@ export const SchemaForm = ({ schema, data, onDataChange, onEncode }: SchemaFormP
             field={field}
             value={data[field.name]}
             onChange={(value) => handleFieldChange(field.name, value)}
+            schema={schema}
           />
         ))}
       </div>

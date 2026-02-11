@@ -1,86 +1,17 @@
-import { schema, int, fixed, array, object, createRecursiveUnion } from 'densing';
+// NOTE: meta-schema is no longer used since we switched to zstd compression
+// Kept for reference, but createRecursiveUnion is not available in densing 0.2.1
 
-/**
- * Meta-schema: A schema that describes schemas!
- * This allows us to encode/decode entire schema definitions as compact base64 strings.
- */
-export const metaSchema = schema(
-  object(
-    'schema',
-    // Schema metadata
-    object(
-      'meta',
-      int('version', 1, 10)
-    ),
-    // Root fields
-    array(
-      'fields',
-      0,
-      20,
-      createRecursiveUnion(
-        'field',
-        ['bool', 'int', 'fixed', 'enum', 'optional', 'array', 'enum_array', 'object', 'union'],
-        (recurse) => ({
-          bool: [
-            int('nameIndex', 0, 100)
-          ],
-          int: [
-            int('nameIndex', 0, 100),
-            int('min', -1000, 1000),
-            int('max', -1000, 10000)
-          ],
-          fixed: [
-            int('nameIndex', 0, 100),
-            int('min', -1000, 1000),
-            int('max', -1000, 10000),
-            fixed('precision', 0.001, 10, 0.001)
-          ],
-          enum: [
-            int('nameIndex', 0, 100),
-            array('options', 1, 20, int('opt', 0, 100)) // Store as string indices
-          ],
-          optional: [
-            int('nameIndex', 0, 100),
-            recurse('wrapped')
-          ],
-          array: [
-            int('nameIndex', 0, 100),
-            int('minLength', 0, 100),
-            int('maxLength', 0, 100),
-            recurse('item')
-          ],
-          enum_array: [
-            int('nameIndex', 0, 100),
-            int('minLength', 0, 100),
-            int('maxLength', 0, 100),
-            array('options', 1, 20, int('opt', 0, 100))
-          ],
-          object: [
-            int('nameIndex', 0, 100),
-            array('fields', 0, 20, recurse('field'))
-          ],
-          union: [
-            int('nameIndex', 0, 100),
-            array('options', 2, 20, int('opt', 0, 100)),
-            array('variants', 2, 20, 
-              array('variantFields', 0, 20, recurse('vfield'))
-            )
-          ]
-        }),
-        5 // max depth for nested structures
-      )
-    ),
-    // String lookup table (for field names, enum options, etc.)
-    array('strings', 0, 200, int('charCode', 32, 126))
-  )
-);
+export const metaSchema = null as any;
+
+// Commented out - uses createRecursiveUnion which doesn't exist in densing 0.2.1
+// export const metaSchema = schema(...);
 
 /**
  * Helper to encode strings into the string table format
  */
 export function encodeStringTable(strings: string[]): number[] {
   const joined = strings.join('|');
-  return Array.from(joined).map(c => c.charCodeAt(0));
+  return Array.from(joined).map((c) => c.charCodeAt(0));
 }
 
 /**

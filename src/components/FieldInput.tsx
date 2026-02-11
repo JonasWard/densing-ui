@@ -1,20 +1,30 @@
 import { useEffect } from 'react';
-import { type DenseField, type IntField, type FixedPointField, type EnumField, type ObjectField, type UnionField } from 'densing';
+import {
+  type DenseField,
+  type IntField,
+  type FixedPointField,
+  type EnumField,
+  type ObjectField,
+  type UnionField,
+  type DenseSchema
+} from 'densing';
+import { NumericInput } from './NumericInput';
 import './FieldInput.css';
 
 interface FieldInputProps {
   field: DenseField;
   value: any;
   onChange: (value: any) => void;
+  schema?: DenseSchema; // Optional: for pointer fields to reference sibling fields
 }
 
-export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
+export const FieldInput = ({ field, value, onChange, schema }: FieldInputProps) => {
   // Initialize union fields properly
   useEffect(() => {
     if (field.type === 'union') {
       const currentValue = value || {};
       const discriminatorValue = currentValue[field.discriminator.name] ?? field.discriminator.defaultValue;
-      
+
       // If value doesn't have the discriminator or variant fields, initialize it
       if (!currentValue[field.discriminator.name]) {
         const variantFields = field.variants[discriminatorValue] ?? [];
@@ -32,55 +42,21 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
       case 'bool':
         return (
           <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={value ?? field.defaultValue}
-              onChange={(e) => onChange(e.target.checked)}
-            />
+            <input type="checkbox" checked={value ?? field.defaultValue} onChange={(e) => onChange(e.target.checked)} />
             <span className="checkbox-custom"></span>
             {value ? 'True' : 'False'}
           </label>
         );
 
       case 'int':
-        return (
-          <div className="number-input">
-            <input
-              type="number"
-              min={field.min}
-              max={field.max}
-              value={value ?? field.defaultValue}
-              onChange={(e) => onChange(parseInt(e.target.value, 10))}
-            />
-            <span className="range-info">
-              Range: [{field.min}, {field.max}]
-            </span>
-          </div>
-        );
+        return <NumericInput field={field as IntField} value={value} onChange={onChange} />;
 
       case 'fixed':
-        return (
-          <div className="number-input">
-            <input
-              type="number"
-              min={field.min}
-              max={field.max}
-              step={field.precision}
-              value={value ?? field.defaultValue}
-              onChange={(e) => onChange(parseFloat(e.target.value))}
-            />
-            <span className="range-info">
-              Range: [{field.min}, {field.max}], Precision: {field.precision}
-            </span>
-          </div>
-        );
+        return <NumericInput field={field as FixedPointField} value={value} onChange={onChange} />;
 
       case 'enum':
         return (
-          <select
-            value={value ?? field.defaultValue}
-            onChange={(e) => onChange(e.target.value)}
-          >
+          <select value={value ?? field.defaultValue} onChange={(e) => onChange(e.target.value)}>
             {field.options.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -110,11 +86,7 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
             </label>
             {isPresent && (
               <div className="nested-field">
-                <FieldInput
-                  field={field.field}
-                  value={value}
-                  onChange={onChange}
-                />
+                <FieldInput field={field.field} value={value} onChange={onChange} schema={schema} />
               </div>
             )}
           </div>
@@ -131,9 +103,10 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
                 onChange={(newVal) => {
                   onChange({
                     ...value,
-                    [subField.name]: newVal,
+                    [subField.name]: newVal
                   });
                 }}
+                schema={schema}
               />
             ))}
           </div>
@@ -169,6 +142,7 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
                     newArray[idx] = newVal;
                     onChange(newArray);
                   }}
+                  schema={schema}
                 />
                 <button
                   className="remove-button"
@@ -239,7 +213,7 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
         const currentValue = value || {};
         const discriminatorValue = currentValue[field.discriminator.name] ?? field.discriminator.defaultValue;
         const variantFields = field.variants[discriminatorValue] ?? [];
-        
+
         return (
           <div className="union-field">
             <div className="discriminator">
@@ -271,12 +245,37 @@ export const FieldInput = ({ field, value, onChange }: FieldInputProps) => {
                   onChange={(newVal) => {
                     onChange({
                       ...currentValue,
-                      [variantField.name]: newVal,
+                      [variantField.name]: newVal
                     });
                   }}
+                  schema={schema}
                 />
               ))}
             </div>
+          </div>
+        );
+      }
+
+      case 'pointer': {
+        // Get the target field from the schema
+        const targetName = (field as any).targetName || '';
+        const targetField = schema?.fields?.find((f) => f.name === targetName);
+
+        if (!targetField) {
+          return (
+            <div className="pointer-info">
+              <span className="info-text">🔄 Pointer references "{targetName}" but field not found</span>
+            </div>
+          );
+        }
+
+        // Render the input for the target field type
+        // The pointer acts as a recursive reference in the schema, but in the UI
+        // we render it as if it were the target field
+        return (
+          <div className="pointer-field">
+            <span className="pointer-label">🔄 References: {targetName}</span>
+            <FieldInput field={targetField} value={value} onChange={onChange} schema={schema} />
           </div>
         );
       }
