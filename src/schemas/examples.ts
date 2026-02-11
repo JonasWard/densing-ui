@@ -156,10 +156,13 @@ export const exampleSchemas = {
     description: 'CITA configuration',
     schema: citaSchema,
     defaultData: {
-      cita: {
-        enabled: true,
-        temperature: 23.5,
-        mode: 'performance'
+      width: 300,
+      height: 200,
+      length: 2000,
+      typology: 'house',
+      offset: {
+        start: 0,
+        end: 0
       }
     }
   }
