@@ -11,6 +11,7 @@ import {
   usesOf
 } from './definitions';
 import { schemaToCode } from './codegen';
+import { reducer, type State } from './store';
 import { defaultFor, reconcile } from './data';
 import { examples } from './examples';
 import {
@@ -265,5 +266,37 @@ describe('numeric definitions', () => {
     expect(ra.schema).not.toBeNull();
     expect(ra.total).toEqual({ min: 8, max: 8 });
     expect(addDefinition(r.schema).name).toBe('length');
+  });
+});
+
+describe('renames keep the preview preset', () => {
+  const box = examples.find((e) => e.id === 'box')!;
+  const data = { $presets: { length: 'm' }, width: 12.5, height: 0.4, depth: 80 };
+  const state = (): State => {
+    const doc = { id: 'd', name: 'Box', schema: box.schema, data, base: 'base64url' as const };
+    return { docs: [doc], activeId: 'd', selected: null, past: [], future: [], lastEdit: null };
+  };
+  const edit = (schema: DenseSchema) => reducer(state(), { type: 'editSchema', schema }).docs[0].data;
+  const d = box.schema.definitions![0];
+
+  it('follows a definition rename', () => {
+    expect(edit(updateDefinition(box.schema, 0, { ...d, name: 'size' }))).toEqual({ ...data, $presets: { size: 'm' } });
+  });
+
+  it('follows a rename of the active preset', () => {
+    expect(edit(updateDefinition(box.schema, 0, renamePreset(d, 'm', 'metre')))).toEqual({
+      ...data,
+      $presets: { length: 'metre' }
+    });
+  });
+
+  it('leaves adding and removing to reconcile', () => {
+    const added = edit(addDefinition(box.schema).schema) as Record<string, unknown>;
+    expect(added.$presets).toEqual({ length: 'm', length2: 'coarse' });
+    const removed = edit(updateDefinition(box.schema, 0, { ...d, presets: { mm: d.presets.mm } })) as Record<
+      string,
+      unknown
+    >;
+    expect(removed).toEqual({ $presets: { length: 'mm' }, width: 0, height: 0, depth: 80 });
   });
 });

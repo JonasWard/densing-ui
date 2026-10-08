@@ -1,6 +1,7 @@
 import { getDefaultData, type DenseSchema } from 'densing';
 import { analyze } from './analyze';
 import { reconcile } from './data';
+import { migratePresets } from './definitions';
 import { examples } from './examples';
 import type { NodePath } from './paths';
 
@@ -29,14 +30,7 @@ export interface State extends Snapshot {
 
 export type Action =
   | { type: 'select'; path: NodePath | null }
-  | {
-      type: 'editSchema';
-      schema: DenseSchema;
-      select?: NodePath | null;
-      coalesce?: string;
-      /** carries a rename into the preview data before it is fitted to the new schema */
-      migrateData?: (data: unknown) => unknown;
-    }
+  | { type: 'editSchema'; schema: DenseSchema; select?: NodePath | null; coalesce?: string }
   | { type: 'setData'; data: unknown }
   | { type: 'setBase'; base: BaseChoice }
   | { type: 'renameDoc'; name: string }
@@ -124,7 +118,8 @@ export const reducer = (state: State, action: Action): State => {
         {
           docs: updateActive(state, {
             schema: action.schema,
-            data: fitData(action.schema, action.migrateData ? action.migrateData(doc.data) : doc.data)
+            // renames of definitions or presets keep the preview's chosen preset
+            data: fitData(action.schema, migratePresets(doc.schema, action.schema, doc.data))
           }),
           selected: action.select === undefined ? state.selected : action.select
         },

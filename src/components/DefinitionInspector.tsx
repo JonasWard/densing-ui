@@ -12,9 +12,7 @@ import {
   presetTemplate,
   removeDefinition,
   removePreset,
-  renameDefinitionInData,
   renamePreset,
-  renamePresetInData,
   selectorBits,
   updateDefinition,
   usesOf
@@ -68,7 +66,7 @@ export const DefinitionInspector = ({ index }: { index: number }) => {
         </p>
       ))}
       <Field label="Name" hint="Renaming updates every shared number that uses it">
-        <TextInput value={d.name} onChange={(v) => set({ ...d, name: v }, 'name', renameDefinitionInData(d.name, v))} />
+        <TextInput value={d.name} onChange={(v) => set({ ...d, name: v }, 'name')} />
       </Field>
 
       <div className="stats">
@@ -99,7 +97,7 @@ export const DefinitionInspector = ({ index }: { index: number }) => {
                   <TextInput
                     value={n}
                     aria-label={`Preset ${i + 1} name`}
-                    onChange={(v) => v && set(renamePreset(d, n, v), `preset${i}`, renamePresetInData(d.name, n, v))}
+                    onChange={(v) => v && set(renamePreset(d, n, v), `preset${i}`)}
                   />
                   <span className="bits-badge">{safeBits(p)}b</span>
                   <button

@@ -126,17 +126,34 @@ export const normalizePreset = (p: NumericPreset): NumericPreset => {
   return { ...p, defaultValue: Math.min(Math.max(d, p.min), Math.max(p.min, p.max)) };
 };
 
-const withPresets = (data: unknown, change: (presets: Record<string, unknown>) => Record<string, unknown>) => {
+/**
+ * Carry renames into the preview data's `$presets`, which is keyed by definition name and holds preset
+ * names. Definitions and presets are paired by position: renames keep positions, so a different name
+ * at the same position (with the same count) is a rename. Anything else is left to `reconcile`.
+ */
+export const migratePresets = (prev: DenseSchema, next: DenseSchema, data: unknown): unknown => {
   if (!data || typeof data !== 'object') return data;
   const presets = (data as Record<string, unknown>)[PRESETS_KEY];
   if (!presets || typeof presets !== 'object') return data;
-  return { ...data, [PRESETS_KEY]: change(presets as Record<string, unknown>) };
+  const before = definitionsOf(prev);
+  const after = definitionsOf(next);
+  if (before.length !== after.length) return data;
+  let changed = false;
+  const out: Record<string, unknown> = { ...(presets as Record<string, unknown>) };
+  before.forEach((old, i) => {
+    const now = after[i];
+    if (old.name !== now.name && old.name in out && !(now.name in out)) {
+      out[now.name] = out[old.name];
+      delete out[old.name];
+      changed = true;
+    }
+    const oldNames = presetNames(old);
+    const newNames = presetNames(now);
+    const j = oldNames.indexOf(out[now.name] as string);
+    if (oldNames.length === newNames.length && j >= 0 && newNames[j] !== oldNames[j]) {
+      out[now.name] = newNames[j];
+      changed = true;
+    }
+  });
+  return changed ? { ...data, [PRESETS_KEY]: out } : data;
 };
-
-/** Keep the preview's chosen preset when its definition is renamed */
-export const renameDefinitionInData = (from: string, to: string) => (data: unknown) =>
-  withPresets(data, (p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k === from ? to : k, v])));
-
-/** Keep the preview's chosen preset when that preset is renamed */
-export const renamePresetInData = (definition: string, from: string, to: string) => (data: unknown) =>
-  withPresets(data, (p) => (p[definition] === from ? { ...p, [definition]: to } : p));
