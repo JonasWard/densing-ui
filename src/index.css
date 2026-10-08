@@ -735,10 +735,10 @@ select.bare {
   margin: 0.75rem 0 0;
 }
 .add-menu {
-  position: absolute;
-  z-index: 20;
-  top: 100%;
-  left: 1rem;
+  /* placed by AddMenu, rendered into <body> so scrolling panels cannot clip it */
+  position: fixed;
+  z-index: 50;
+  overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
