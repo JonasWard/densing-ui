@@ -1,4 +1,12 @@
-import { getDenseFieldBitWidthRange, schemaFromJson, validateSchema, type DenseField, type DenseSchema } from 'densing';
+import {
+  analyzeDenseSchemaSize,
+  getDenseFieldBitWidthRange,
+  schemaFromJson,
+  validateSchema,
+  type DenseField,
+  type DenseSchema
+} from 'densing';
+import { definitionsOf, headerBits, selectorBits } from './definitions';
 import { childEntries, listNodes, pathKey, type NodePath } from './paths';
 
 export interface BitRange {
@@ -16,6 +24,8 @@ export interface Analysis {
   /** bit range per node path key; missing when it could not be computed */
   ranges: Map<string, BitRange>;
   total: BitRange | null;
+  /** bits the payload header spends on choosing presets (0 without definitions) */
+  header: number;
   /** field name → node path, in densing's resolution order, for pointers */
   byName: Map<string, NodePath>;
 }
@@ -43,6 +53,8 @@ const shallow = (field: DenseField): DenseField => {
       // the optional's default is checked against its inner field, keep that check out of the shallow pass
       return { ...field, field: placeholder('__inner'), defaultValue: undefined };
     case 'pointer':
+    case 'reference_numeric':
+      // their targets are checked against the whole schema in step 3
       return placeholder(field.name);
     default:
       return field;
@@ -94,7 +106,16 @@ export const analyze = (schema: DenseSchema): Analysis => {
     }
     if (field.type === 'pointer' && typeof field.targetName !== 'string')
       push(pathKey(path), '"targetName" must be a string');
+    if (field.type === 'reference_numeric' && !field.ref) push(pathKey(path), 'choose a definition');
   }
+  // 1b. every numeric definition on its own
+  definitionsOf(schema).forEach((d, i) => {
+    try {
+      schemaFromJson({ definitions: [d], fields: [placeholder('__x')] });
+    } catch (e) {
+      push(pathKey(['definitions', i]), stripPrefix(e instanceof Error ? e.message : String(e)));
+    }
+  });
   // 2. duplicate names within one list
   for (const [list, fields] of listsOf(schema)) {
     const seen = new Set<string>();
@@ -110,6 +131,10 @@ export const analyze = (schema: DenseSchema): Analysis => {
   if (errors.size === 0 && rootErrors.length === 0) {
     const names = namePaths(schema);
     for (const { path, message } of validateSchema(schema).errors) {
+      if (/^definitions\[\d+\]$/.test(path)) {
+        push(path, message);
+        continue;
+      }
       const keys = names.get(path);
       if (keys?.length) keys.forEach((k) => push(k, message));
       else rootErrors.push(`${path}: ${message}`);
@@ -135,18 +160,17 @@ export const analyze = (schema: DenseSchema): Analysis => {
       // unresolved pointer or malformed field
     }
   }
+  definitionsOf(schema).forEach((d, i) => {
+    const key = pathKey(['definitions', i]);
+    if (!errors.has(key)) ranges.set(key, { min: selectorBits(d), max: selectorBits(d) });
+  });
   let total: BitRange | null = null;
   if (valid) {
-    total = valid.fields.reduce<BitRange>(
-      (acc, f) => {
-        const r = getDenseFieldBitWidthRange(f, valid!);
-        return { min: acc.min + r.min, max: acc.max + r.max };
-      },
-      { min: 0, max: 0 }
-    );
+    const { minBits, maxBits } = analyzeDenseSchemaSize(valid).staticRange;
+    total = { min: minBits, max: maxBits };
   }
 
-  return { schema: valid, errors, rootErrors, ranges, total, byName };
+  return { schema: valid, errors, rootErrors, ranges, total, header: valid ? headerBits(valid) : 0, byName };
 };
 
 /** Characters needed for `bits` bits in a base with `base` symbols (same rule as densing) */

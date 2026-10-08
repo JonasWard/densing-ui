@@ -1,6 +1,14 @@
 import { validate, type DenseField, type DenseSchema } from 'densing';
 import { useMemo } from 'react';
-import { defaultFor } from '../model/data';
+import { defaultFor, reconcile } from '../model/data';
+import {
+  activePresetName,
+  definitionsOf,
+  findDefinition,
+  PRESETS_KEY,
+  presetAsField,
+  presetNames
+} from '../model/definitions';
 import { getField, pathKey, type NodePath } from '../model/paths';
 import { useEditor } from '../editor';
 import { NumberInput, Segmented, Toggle, TypeChip } from './ui';
@@ -11,6 +19,7 @@ interface Ctx {
   schema: DenseSchema;
   byName: Map<string, NodePath>;
   errors: Map<string, string>;
+  presets: unknown;
   depth: number;
 }
 
@@ -24,9 +33,16 @@ export const DataForm = () => {
   }, [schema, doc.data]);
   if (!schema) return <p className="muted small">The form appears once the schema is valid.</p>;
   const data = (doc.data ?? {}) as Record<string, any>;
-  const ctx: Ctx = { schema, byName: analysis.byName, errors, depth: 0 };
+  const ctx: Ctx = { schema, byName: analysis.byName, errors, presets: data[PRESETS_KEY], depth: 0 };
   return (
     <div className="data-form" onMouseLeave={() => setHover({})}>
+      <PresetPickers
+        data={data}
+        onChange={(presets) =>
+          // values the new preset cannot hold are reset, the rest stay
+          dispatch({ type: 'setData', data: reconcile(schema, { ...data, [PRESETS_KEY]: presets }, analysis.byName) })
+        }
+      />
       {schema.fields.map((f, i) => (
         <FieldRow
           key={f.name}
@@ -80,7 +96,7 @@ const FieldRow = (props: RowProps) => {
 };
 
 const Control = ({ field, node, dataPath, value, ctx, onChange }: RowProps) => {
-  const fresh = (f: DenseField) => defaultFor(f, ctx.schema, ctx.byName);
+  const fresh = (f: DenseField) => defaultFor(f, ctx.schema, ctx.byName, ctx.presets);
   const child = (f: DenseField, n: NodePath, p: string, v: any, set: (v: any) => void, label?: string) => (
     <FieldRow
       key={p}
@@ -282,6 +298,26 @@ const Control = ({ field, node, dataPath, value, ctx, onChange }: RowProps) => {
         </div>
       );
     }
+    case 'reference_numeric': {
+      const d = findDefinition(ctx.schema, field.ref);
+      if (!d) return <span className="muted">unresolved</span>;
+      const preset = activePresetName(d, ctx.presets);
+      return (
+        <div className="ref-control">
+          <Control
+            field={presetAsField(d, preset, field.name)}
+            node={node}
+            dataPath={dataPath}
+            value={value}
+            ctx={ctx}
+            onChange={onChange}
+          />
+          <span className="unit" title={`${d.name} preset`}>
+            {preset}
+          </span>
+        </div>
+      );
+    }
     case 'pointer': {
       const target = ctx.byName.get(field.targetName);
       const tf = target && getField(ctx.schema, target);
@@ -299,4 +335,59 @@ const Control = ({ field, node, dataPath, value, ctx, onChange }: RowProps) => {
       );
     }
   }
+};
+
+/** One picker per numeric definition: the preset this payload uses */
+const PresetPickers = ({
+  data,
+  onChange
+}: {
+  data: Record<string, any>;
+  onChange: (presets: Record<string, string>) => void;
+}) => {
+  const { analysis, hover, setHover, dispatch } = useEditor();
+  const definitions = analysis.schema ? definitionsOf(analysis.schema) : [];
+  if (!definitions.length) return null;
+  const current = Object.fromEntries(definitions.map((d) => [d.name, activePresetName(d, data[PRESETS_KEY])]));
+  return (
+    <div className="preset-pickers">
+      {definitions.map((d, i) => {
+        const dataPath = `${PRESETS_KEY}.${d.name}`;
+        const options = presetNames(d).map((n) => ({ value: n, label: n }));
+        return (
+          <div
+            key={d.name}
+            className={`data-row ${hover.dataPath === dataPath ? 'lit' : ''}`}
+            onMouseEnter={() => setHover({ dataPath, nodeKey: pathKey(['definitions', i]) })}
+            onFocus={() => dispatch({ type: 'select', path: ['definitions', i] })}
+          >
+            <div className="data-label">
+              <span className="type-chip t-definition">def</span>
+              <span>{d.name} preset</span>
+            </div>
+            <div className="data-control">
+              {options.length <= 4 ? (
+                <Segmented
+                  small
+                  value={current[d.name]}
+                  options={options}
+                  onChange={(v) => onChange({ ...current, [d.name]: v })}
+                />
+              ) : (
+                <select
+                  className="input"
+                  value={current[d.name]}
+                  onChange={(e) => onChange({ ...current, [d.name]: e.target.value })}
+                >
+                  {options.map((o) => (
+                    <option key={o.value}>{o.value}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 };

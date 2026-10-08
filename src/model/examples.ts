@@ -1,6 +1,7 @@
 import {
   array,
   bool,
+  definition,
   enumArray,
   enumeration,
   fixed,
@@ -8,7 +9,9 @@ import {
   object,
   optional,
   pointer,
+  referenceNumeric,
   schema,
+  schemaWithDefinitions,
   union,
   type DenseSchema
 } from 'densing';
@@ -21,7 +24,7 @@ export interface Example {
   data: unknown;
 }
 
-const plain = (s: { fields: unknown }): DenseSchema => JSON.parse(JSON.stringify(s));
+const plain = (s: { fields: unknown; definitions?: unknown }): DenseSchema => JSON.parse(JSON.stringify(s));
 
 export const examples: Example[] = [
   {
@@ -118,6 +121,20 @@ export const examples: Example[] = [
       ],
       tags: ['neon', 'cool']
     }
+  },
+  {
+    id: 'box',
+    name: 'Box (shared units)',
+    description: 'A numeric definition with mm and m presets, shared by three fields',
+    schema: plain(
+      schemaWithDefinitions(
+        [definition('length', { mm: { min: 0, max: 1000 }, m: { min: 0, max: 100, precision: 0.01 } })],
+        referenceNumeric('width', 'length'),
+        referenceNumeric('height', 'length'),
+        referenceNumeric('depth', 'length')
+      )
+    ),
+    data: { $presets: { length: 'mm' }, width: 120, height: 40, depth: 800 }
   },
   {
     id: 'expression',

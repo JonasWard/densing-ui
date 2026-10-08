@@ -1,12 +1,13 @@
 # densing builder
 
-A visual schema builder for [densing](https://github.com/JonasWard/densing) 0.4: build a schema as a tree and see what every field costs, bit by bit.
+A visual schema builder for [densing](https://github.com/JonasWard/densing) (0.4.1): build a schema as a tree and see what every field costs, bit by bit.
 
 ## What it does
 
 - **Outline tree.** Add fields of any densing type, rename them, and drag them to reorder or to nest them in objects and union variants. Wrap a field in an optional, array or object, or unwrap it. Keyboard: `↑↓` select, `Alt ↑↓` reorder, `Ctrl D` duplicate, `Del` remove, `Enter` rename, `Ctrl Z` / `Ctrl Shift Z` undo/redo.
 - **Inspector with costs.** Each field shows its bit range. Integers and fixed-point fields show how many values the range has, how many fit in its bits, and a one-click "use the full N bits" when the top of the range is free. Fixed-point precision options are labelled with their bit cost. Enums say how many more options fit. Enum arrays compare packed and unpacked size. Union variants show their size each.
-- **Bit ribbon.** Every bit the preview data encodes to, in encoder order and coloured by field. Bits are grouped under the base64url character they become. Presence bits, length prefixes and union tags are striped. Hovering a bit, a legend entry, a tree row or a form row highlights the same field everywhere.
+- **Shared numbers.** A numeric definition holds a range once, with one or more presets (say mm and m). Any number of "shared number" fields use it, and each payload picks a preset in its header, which costs `log₂(presets)` bits. Definitions sit at the top of the structure. Their inspector edits presets and the default preset, and shows the bit cost of each preset and which fields use the definition. "Share range" turns an integer or fixed field into a definition. The preview form has a preset picker per definition; switching keeps the values that still fit. Renaming a definition or preset keeps the preview's choice.
+- **Bit ribbon.** Every bit the preview data encodes to, in encoder order and coloured by field. Bits are grouped under the base64url character they become. Preset choices, presence bits, length prefixes and union tags are striped. Hovering a bit, a legend entry, a tree row or a form row highlights the same field everywhere.
 - **Try it.** A form generated from the schema, the encoded string (base64url, QR-safe base45 or binary), a QR code, and paste-to-decode. When you edit the schema, preview values that still fit are kept.
 - **Diagnostics.** Problems from `schemaFromJson` and `validateSchema` (bad ranges, duplicate names, unresolved or endless pointers) are marked on the field they belong to. You can keep editing; the preview pauses until the schema is valid.
 - **Export.** TypeScript builder code (`schema(int(...), ...)`), generated types (`generateTypes`), schema JSON, and `densing-cli` commands. Import accepts schema JSON, pasted or as a file.
@@ -31,6 +32,7 @@ Pushes to `main` deploy to GitHub Pages (`.github/workflows/deploy.yml`).
 src/
   model/            pure logic, unit tested
     paths.ts        addressing nodes in the schema JSON (fields[0].variants.add[1])
+    definitions.ts  numeric definitions: presets, header bits, renames, Share range
     ops.ts          insert / move / duplicate / wrap / change type / union variants
     analyze.ts      per-node errors and bit ranges, built on densing's own checks
     ribbon.ts       the bit layout of a value, in encoder order

@@ -42,7 +42,7 @@ export const BitRibbon = () => {
   const selectedKey = state.selected ? pathKey(state.selected) : undefined;
   const lit = (s: Segment | undefined) =>
     !!s &&
-    ((hover.nodeKey !== undefined && coversPath(hover.nodeKey, s.nodeKey)) ||
+    ((hover.nodeKey !== undefined && (coversPath(hover.nodeKey, s.nodeKey) || s.refKey === hover.nodeKey)) ||
       (hover.dataPath !== undefined && coversPath(hover.dataPath, s.dataPath)));
   const anyHover = hover.nodeKey !== undefined || hover.dataPath !== undefined;
   const hovered = segments.find(lit);
@@ -94,7 +94,9 @@ export const BitRibbon = () => {
                       <span
                         key={j}
                         className={`bit ${isPad ? 'pad' : `c${colorOf.get(s?.nodeKey ?? '') ?? 0} k-${s?.kind}`} ${lit(s) ? 'lit' : ''} ${
-                          s && selectedKey && coversPath(selectedKey, s.nodeKey) ? 'sel' : ''
+                          s && selectedKey && (coversPath(selectedKey, s.nodeKey) || s.refKey === selectedKey)
+                            ? 'sel'
+                            : ''
                         } ${s && s.start === i ? 'seg-start' : ''}`}
                         title={
                           isPad

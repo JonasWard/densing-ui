@@ -1,6 +1,7 @@
 import { getDefaultData, type DenseSchema } from 'densing';
 import { analyze } from './analyze';
 import { reconcile } from './data';
+import { migratePresets } from './definitions';
 import { examples } from './examples';
 import type { NodePath } from './paths';
 
@@ -115,7 +116,11 @@ export const reducer = (state: State, action: Action): State => {
       return commit(
         state,
         {
-          docs: updateActive(state, { schema: action.schema, data: fitData(action.schema, doc.data) }),
+          docs: updateActive(state, {
+            schema: action.schema,
+            // renames of definitions or presets keep the preview's chosen preset
+            data: fitData(action.schema, migratePresets(doc.schema, action.schema, doc.data))
+          }),
           selected: action.select === undefined ? state.selected : action.select
         },
         action.coalesce

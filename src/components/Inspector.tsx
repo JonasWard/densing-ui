@@ -26,14 +26,18 @@ import {
   type FieldType,
   type WrapKind
 } from '../model/ops';
+import { extractDefinition } from '../model/definitions';
 import { getField, parentListPath, pathKey, type NodePath } from '../model/paths';
 import { coversPath, useEditor } from '../editor';
+import { DefinitionInspector, ReferenceNumericEditor } from './DefinitionInspector';
 import { Field, NumberInput, Stat, TextInput, Toggle, TypeChip } from './ui';
 
 export const Inspector = ({ renameNonce }: { renameNonce: number }) => {
   const { doc, state } = useEditor();
   const path = state.selected;
   const field = path ? getField(doc.schema, path) : undefined;
+  if (path?.[0] === 'definitions' && typeof path[1] === 'number')
+    return <DefinitionInspector key={pathKey(path)} index={path[1]} />;
   if (!path || !field) return <SchemaOverview />;
   return <FieldInspector key={pathKey(path)} path={path} field={field} renameNonce={renameNonce} />;
 };
@@ -48,6 +52,7 @@ const SchemaOverview = () => {
       </div>
       <div className="stats">
         <Stat label="fields" value={doc.schema.fields.length} />
+        {!!doc.schema.definitions?.length && <Stat label="preset header bits" value={analysis.header} />}
         <Stat label="bits" value={formatBits(t)} />
         <Stat
           label="base64url chars"
@@ -179,6 +184,19 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
             Duplicate
           </button>
         )}
+        {(field.type === 'int' || field.type === 'fixed') && (
+          <button
+            type="button"
+            className="btn small"
+            title="Move this range into a numeric definition, so other fields can share it and it can get presets"
+            onClick={() => {
+              const r = extractDefinition(doc.schema, path, field);
+              dispatch({ type: 'editSchema', schema: r.schema, select: r.definitionPath });
+            }}
+          >
+            Share range
+          </button>
+        )}
         <span className="muted small">Wrap in</span>
         {(['optional', 'array', 'object'] as WrapKind[]).map((k) => (
           <button key={k} type="button" className="btn small" onClick={() => wrap(k)}>
@@ -239,6 +257,8 @@ const TypeEditor = ({ field, set, path }: { field: DenseField; set: Setter; path
       return <UnionEditor field={field} set={set} path={path} />;
     case 'pointer':
       return <PointerEditor field={field} set={set} path={path} />;
+    case 'reference_numeric':
+      return <ReferenceNumericEditor field={field} path={path} />;
   }
 };
 
