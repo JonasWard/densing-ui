@@ -10,7 +10,8 @@ export const TYPE_GLYPH: Record<FieldType, string> = {
   enum_array: '[a]',
   optional: '?',
   union: '|',
-  pointer: '↗'
+  pointer: '↗',
+  reference_numeric: '#→'
 };
 
 export const download = (filename: string, text: string, type = 'text/plain') => {

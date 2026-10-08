@@ -26,6 +26,7 @@ import {
 } from '../model/ops';
 import { pathKey, samePath, type NodePath } from '../model/paths';
 import { useEditor } from '../editor';
+import { addDefinition, definitionsOf, presetNames, usesOf } from '../model/definitions';
 import { AddMenu } from './AddMenu';
 import { buildRows, dropTargetFor, type DropTarget, type Row } from './tree-rows';
 import { TypeChip } from './ui';
@@ -40,7 +41,8 @@ const BASE_NAMES: Record<FieldType, string> = {
   enum_array: 'tags',
   optional: 'maybe',
   union: 'choice',
-  pointer: 'ref'
+  pointer: 'ref',
+  reference_numeric: 'size'
 };
 
 export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }) => {
@@ -69,8 +71,19 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
     const taken = allNames(doc.schema);
     const name = uniqueName(taken, BASE_NAMES[type]);
     taken.add(name);
-    const field = fieldTemplate(type, name, taken);
-    dispatch({ type: 'editSchema', schema: insertField(doc.schema, list, index, field), select: [...list, index] });
+    let schema = doc.schema;
+    let field = fieldTemplate(type, name, taken);
+    if (field.type === 'reference_numeric') {
+      // a shared number needs a definition: use the first one, or create one
+      const first = definitionsOf(schema)[0];
+      if (first) field = { ...field, ref: first.name };
+      else {
+        const added = addDefinition(schema);
+        schema = added.schema;
+        field = { ...field, ref: added.name };
+      }
+    }
+    dispatch({ type: 'editSchema', schema: insertField(schema, list, index, field), select: [...list, index] });
     setMenuFor(null);
     onRequestRename();
   };
@@ -134,6 +147,7 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
             : `${analysis.errors.size + analysis.rootErrors.length} issue(s)`}
         </span>
       </div>
+      <DefinitionsSection />
       <DndContext
         sensors={sensors}
         collisionDetection={pointerWithin}
@@ -333,6 +347,7 @@ const TreeRow = ({
       <span className="row-name">{field.name || <em className="muted">unnamed</em>}</span>
       {row.slot && <span className="slot-tag">{row.slot}</span>}
       {field.type === 'pointer' && <span className="muted small">→ {field.targetName || '?'}</span>}
+      {field.type === 'reference_numeric' && <span className="muted small">→ {field.ref || '?'}</span>}
       {field.type === 'array' && (
         <span className="muted small">
           ×{field.minLength === field.maxLength ? field.minLength : `${field.minLength}–${field.maxLength}`}
@@ -345,6 +360,64 @@ const TreeRow = ({
         </span>
       )}
       <span className="bits-badge">{bits}</span>
+    </div>
+  );
+};
+
+/** Numeric definitions live beside the fields: shared ranges with presets, chosen once per payload */
+const DefinitionsSection = () => {
+  const { doc, state, dispatch, analysis, hover, setHover } = useEditor();
+  const definitions = definitionsOf(doc.schema);
+  const selectedKey = state.selected ? pathKey(state.selected) : null;
+  return (
+    <div className="definitions" onMouseLeave={() => setHover({})}>
+      <div className="definitions-head">
+        <span className="form-label">Shared numbers</span>
+        <button
+          type="button"
+          className="add-btn"
+          onClick={() => {
+            const r = addDefinition(doc.schema);
+            dispatch({ type: 'editSchema', schema: r.schema, select: r.path });
+          }}
+        >
+          + Definition
+        </button>
+      </div>
+      {definitions.length === 0 && (
+        <p className="muted small definitions-empty">
+          A definition is a numeric range with presets (e.g. mm or m), used by any number of “shared number” fields.
+        </p>
+      )}
+      {definitions.map((d, i) => {
+        const key = pathKey(['definitions', i]);
+        const uses = usesOf(doc.schema, d.name).length;
+        return (
+          <div
+            key={i}
+            className={`tree-row field-row def-row ${selectedKey === key ? 'selected' : ''} ${hover.nodeKey === key ? 'hovered' : ''} ${
+              analysis.errors.has(key) ? 'has-error' : ''
+            }`}
+            onClick={() => dispatch({ type: 'select', path: ['definitions', i] })}
+            onMouseEnter={() => setHover({ nodeKey: key })}
+          >
+            <span className="type-chip t-definition">def</span>
+            <span className="row-name">{d.name || <em className="muted">unnamed</em>}</span>
+            <span className="muted small">
+              {presetNames(d).length} preset{presetNames(d).length === 1 ? '' : 's'} · {uses} use{uses === 1 ? '' : 's'}
+            </span>
+            <span className="row-spacer" />
+            {analysis.errors.has(key) && (
+              <span className="error-dot" title={analysis.errors.get(key)!.join('\n')}>
+                !
+              </span>
+            )}
+            <span className="bits-badge" title="bits in the payload header to choose the preset">
+              {formatBits(analysis.ranges.get(key))}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 };

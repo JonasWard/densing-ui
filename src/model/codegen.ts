@@ -1,4 +1,4 @@
-import type { DenseField, DenseSchema, EnumField } from 'densing';
+import type { DenseField, DenseSchema, EnumField, NumericDefinition, NumericPreset } from 'densing';
 
 const str = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 const key = (s: string) => (/^[A-Za-z_$][\w$]*$/.test(s) ? s : str(s));
@@ -31,6 +31,8 @@ const fieldCode = (f: DenseField, indent: string): string => {
       })`;
     case 'pointer':
       return `pointer(${str(f.name)}, ${str(f.targetName)})`;
+    case 'reference_numeric':
+      return `referenceNumeric(${str(f.name)}, ${str(f.ref)})`;
     case 'object':
       if (!f.fields.length) return `object(${str(f.name)})`;
       return `object(\n${next}${[str(f.name), ...f.fields.map((c) => fieldCode(c, next))].join(`,\n${next}`)}\n${indent})`;
@@ -49,7 +51,7 @@ const fieldCode = (f: DenseField, indent: string): string => {
 };
 
 const builders = (schema: DenseSchema) => {
-  const used = new Set<string>(['schema']);
+  const used = new Set<string>(schema.definitions?.length ? ['schemaWithDefinitions', 'definition'] : ['schema']);
   const names: Record<DenseField['type'], string> = {
     bool: 'bool',
     int: 'int',
@@ -59,6 +61,7 @@ const builders = (schema: DenseSchema) => {
     array: 'array',
     optional: 'optional',
     pointer: 'pointer',
+    reference_numeric: 'referenceNumeric',
     object: 'object',
     union: 'union'
   };
@@ -80,8 +83,24 @@ export const identifier = (name: string, suffix = '') => {
   return (/^\d/.test(id) ? `_${id}` : id) + suffix;
 };
 
+const presetCode = (p: NumericPreset) =>
+  `{ min: ${p.min}, max: ${p.max}${p.precision !== undefined ? `, precision: ${p.precision}` : ''}${
+    p.defaultValue !== undefined && p.defaultValue !== p.min ? `, defaultValue: ${p.defaultValue}` : ''
+  } }`;
+
+const definitionCode = (d: NumericDefinition) => {
+  const names = Object.keys(d.presets);
+  const presets = names.map((n) => `${key(n)}: ${presetCode(d.presets[n])}`).join(', ');
+  const def = d.defaultPreset !== undefined && d.defaultPreset !== names[0] ? `, ${str(d.defaultPreset)}` : '';
+  return `definition(${str(d.name)}, { ${presets} }${def})`;
+};
+
 /** TypeScript source that builds `schema` with densing's builder functions */
-export const schemaToCode = (schema: DenseSchema, name: string): string =>
-  `import { ${builders(schema).join(', ')} } from 'densing';\n\nexport const ${identifier(name, 'Schema')} = schema(\n  ${schema.fields
-    .map((f) => fieldCode(f, '  '))
-    .join(',\n  ')}\n);\n`;
+export const schemaToCode = (schema: DenseSchema, name: string): string => {
+  const fields = schema.fields.map((f) => fieldCode(f, '  '));
+  const defs = schema.definitions ?? [];
+  const head = `import { ${builders(schema).join(', ')} } from 'densing';\n\nexport const ${identifier(name, 'Schema')} = `;
+  if (!defs.length) return `${head}schema(\n  ${fields.join(',\n  ')}\n);\n`;
+  const definitions = `[\n    ${defs.map(definitionCode).join(',\n    ')}\n  ]`;
+  return `${head}schemaWithDefinitions(\n  ${[definitions, ...fields].join(',\n  ')}\n);\n`;
+};

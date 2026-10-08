@@ -1,8 +1,9 @@
 import { calculateDenseFieldBitWidth, type DenseField, type DenseSchema } from 'densing';
+import { activePresetName, definitionsOf, PRESETS_KEY, selectorBits } from './definitions';
 import { bitsForStates } from './ops';
 import { pathKey, type NodePath } from './paths';
 
-export type SegmentKind = 'value' | 'presence' | 'length' | 'tag' | 'packed';
+export type SegmentKind = 'value' | 'presence' | 'length' | 'tag' | 'packed' | 'preset';
 
 export interface Segment {
   start: number;
@@ -16,6 +17,8 @@ export interface Segment {
   label: string;
   /** the value as written, for tooltips */
   value: string;
+  /** for `reference_numeric` values: the definition they are encoded with (`definitions[0]`) */
+  refKey?: string;
 }
 
 /**
@@ -25,10 +28,32 @@ export interface Segment {
 export const layoutBits = (schema: DenseSchema, data: unknown, byName: Map<string, NodePath>): Segment[] => {
   const out: Segment[] = [];
   let cursor = 0;
-  const emit = (bits: number, kind: SegmentKind, node: NodePath, dataPath: string, label: string, value: string) => {
-    if (bits > 0) out.push({ start: cursor, bits, kind, nodeKey: pathKey(node), node, dataPath, label, value });
+  const emit = (
+    bits: number,
+    kind: SegmentKind,
+    node: NodePath,
+    dataPath: string,
+    label: string,
+    value: string,
+    refKey?: string
+  ) => {
+    if (bits > 0) out.push({ start: cursor, bits, kind, nodeKey: pathKey(node), node, dataPath, label, value, refKey });
     cursor += bits;
   };
+  // header: the active preset of every definition, in definition order
+  const presets = (data as Record<string, unknown>)?.[PRESETS_KEY];
+  const definitions = definitionsOf(schema);
+  definitions.forEach((d, i) => {
+    const name = activePresetName(d, presets);
+    emit(
+      selectorBits(d),
+      'preset',
+      ['definitions', i],
+      `${PRESETS_KEY}.${d.name}`,
+      `${d.name} preset`,
+      JSON.stringify(name)
+    );
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const visit = (field: DenseField, node: NodePath, value: any, dataPath: string) => {
@@ -40,6 +65,12 @@ export const layoutBits = (schema: DenseSchema, data: unknown, byName: Map<strin
       case 'enum':
         emit(calculateDenseFieldBitWidth(field, value), 'value', key, dataPath, field.name, JSON.stringify(value));
         break;
+      case 'reference_numeric': {
+        const i = definitions.findIndex((d) => d.name === field.ref);
+        const bits = calculateDenseFieldBitWidth(field, value, schema, presets as Record<string, unknown>);
+        emit(bits, 'value', key, dataPath, field.name, JSON.stringify(value), pathKey(['definitions', i]));
+        break;
+      }
       case 'optional': {
         const present = value !== null && value !== undefined;
         emit(1, 'presence', key, dataPath, `${field.name}?`, present ? 'present' : 'absent');

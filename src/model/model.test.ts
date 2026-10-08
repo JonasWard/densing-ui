@@ -2,6 +2,14 @@ import * as densing from 'densing';
 import { calculateDenseDataSize, densing as encode, schemaFromJson, type DenseSchema } from 'densing';
 import { describe, expect, it } from 'vitest';
 import { analyze, charsForBits } from './analyze';
+import {
+  addDefinition,
+  extractDefinition,
+  removeDefinition,
+  renamePreset,
+  updateDefinition,
+  usesOf
+} from './definitions';
 import { schemaToCode } from './codegen';
 import { defaultFor, reconcile } from './data';
 import { examples } from './examples';
@@ -180,5 +188,82 @@ describe('data', () => {
     const ex = examples.find((e) => e.id === 'expression')!;
     const a = analyze(ex.schema);
     expect(defaultFor(a.schema!.fields[0], a.schema!, a.byName)).toEqual({ type: 'number', value: 0 });
+  });
+});
+
+describe('numeric definitions', () => {
+  const box = examples.find((e) => e.id === 'box')!;
+  const a = analyze(box.schema);
+
+  it('encodes like the densing README', () => {
+    expect(encode(a.schema!, { width: 120, height: 40, depth: 800 })).toBe('DwFGQA');
+    expect(encode(a.schema!, { $presets: { length: 'm' }, width: 12.5, height: 0.4, depth: 80 })).toBe('icQBQ-gA');
+  });
+
+  it('counts the preset header in totals and ranges', () => {
+    expect(a.header).toBe(1);
+    expect(a.ranges.get('definitions[0]')).toEqual({ min: 1, max: 1 });
+    expect(a.ranges.get('fields[0]')).toEqual({ min: 10, max: 14 });
+    expect(a.total).toEqual({ min: 31, max: 43 });
+  });
+
+  it('ribbon starts with the preset selector and matches the encoder', () => {
+    const data = { $presets: { length: 'm' }, width: 12.5, height: 0.4, depth: 80 };
+    const segs = layoutBits(a.schema!, data, a.byName);
+    expect(segs[0]).toMatchObject({
+      kind: 'preset',
+      start: 0,
+      bits: 1,
+      nodeKey: 'definitions[0]',
+      dataPath: '$presets.length'
+    });
+    expect(segs[1]).toMatchObject({ refKey: 'definitions[0]', bits: 14 });
+    expect(segs.reduce((n, x) => n + x.bits, 0)).toBe(encode(a.schema!, data, 'binary').length);
+  });
+
+  it('reconcile adds $presets and resets values the new preset cannot hold', () => {
+    expect(reconcile(a.schema!, { width: 120, height: 40, depth: 800 }, a.byName)).toEqual(box.data);
+    const switched = reconcile(a.schema!, { ...(box.data as object), $presets: { length: 'm' } }, a.byName);
+    expect(switched).toEqual({ $presets: { length: 'm' }, width: 0, height: 40, depth: 0 });
+    expect(reconcile(a.schema!, { ...(box.data as object), $presets: { length: 'nope' } }, a.byName).$presets).toEqual({
+      length: 'mm'
+    });
+  });
+
+  it('codegen uses schemaWithDefinitions and round-trips', () => {
+    const code = schemaToCode(box.schema, box.name);
+    expect(code).toContain(
+      "definition('length', { mm: { min: 0, max: 1000 }, m: { min: 0, max: 100, precision: 0.01 } })"
+    );
+    expect(code).toContain("referenceNumeric('width', 'length')");
+  });
+
+  it('renaming a definition updates its references, removing one leaves them flagged', () => {
+    const d = box.schema.definitions![0];
+    const renamed = updateDefinition(box.schema, 0, { ...d, name: 'size' });
+    expect(usesOf(renamed, 'size')).toHaveLength(3);
+    expect(analyze(renamed).schema).not.toBeNull();
+    const removed = removeDefinition(box.schema, 0);
+    expect(removed.definitions).toBeUndefined();
+    expect([...analyze(removed).errors.keys()]).toEqual(['fields[0]', 'fields[1]', 'fields[2]']);
+  });
+
+  it('flags a bad preset on the definition', () => {
+    const d = box.schema.definitions![0];
+    const bad = updateDefinition(box.schema, 0, { ...d, presets: { ...d.presets, mm: { min: 10, max: 1 } } });
+    expect([...analyze(bad).errors.keys()]).toEqual(['definitions[0]']);
+  });
+
+  it('renames presets in place and extracts an int into a definition', () => {
+    const d = renamePreset(box.schema.definitions![0], 'mm', 'millimetre');
+    expect(Object.keys(d.presets)).toEqual(['millimetre', 'm']);
+    expect(d.defaultPreset).toBe('millimetre');
+    const s: DenseSchema = { fields: [fieldTemplate('int', 'n')] };
+    const r = extractDefinition(s, ['fields', 0], s.fields[0] as never);
+    expect(r.schema.fields[0]).toEqual({ type: 'reference_numeric', name: 'n', ref: 'n' });
+    const ra = analyze(r.schema);
+    expect(ra.schema).not.toBeNull();
+    expect(ra.total).toEqual({ min: 8, max: 8 });
+    expect(addDefinition(r.schema).name).toBe('length');
   });
 });

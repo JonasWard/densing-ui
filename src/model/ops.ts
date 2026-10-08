@@ -13,7 +13,8 @@ export const FIELD_TYPES: { type: FieldType; label: string; hint: string }[] = [
   { type: 'enum_array', label: 'Enum array', hint: 'packed list of options' },
   { type: 'optional', label: 'Optional', hint: 'presence bit + field' },
   { type: 'union', label: 'Union', hint: 'tagged variants' },
-  { type: 'pointer', label: 'Pointer', hint: 'refers to a field, for recursion' }
+  { type: 'pointer', label: 'Pointer', hint: 'refers to a field, for recursion' },
+  { type: 'reference_numeric', label: 'Shared number', hint: 'range from a definition' }
 ];
 
 export const allNames = (schema: DenseSchema): Set<string> => new Set(listNodes(schema).map((n) => n.field.name));
@@ -59,6 +60,8 @@ export const fieldTemplate = (type: FieldType, name: string, taken: Set<string> 
       return { type, name, discriminator: enumTemplate('type', ['a', 'b']), variants: { a: [], b: [] } };
     case 'pointer':
       return { type, name, targetName: '' };
+    case 'reference_numeric':
+      return { type, name, ref: '' };
   }
 };
 
@@ -66,6 +69,7 @@ export const fieldTemplate = (type: FieldType, name: string, taken: Set<string> 
 export const changeType = (field: DenseField, type: FieldType, schema: DenseSchema): DenseField => {
   if (field.type === type) return field;
   const next = fieldTemplate(type, field.name, allNames(schema));
+  if (next.type === 'reference_numeric') return { ...next, ref: schema.definitions?.[0]?.name ?? '' };
   if ((field.type === 'int' || field.type === 'fixed') && (next.type === 'int' || next.type === 'fixed')) {
     const min = next.type === 'int' ? Math.ceil(field.min) : field.min;
     const max = next.type === 'int' ? Math.floor(field.max) : field.max;

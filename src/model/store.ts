@@ -29,7 +29,14 @@ export interface State extends Snapshot {
 
 export type Action =
   | { type: 'select'; path: NodePath | null }
-  | { type: 'editSchema'; schema: DenseSchema; select?: NodePath | null; coalesce?: string }
+  | {
+      type: 'editSchema';
+      schema: DenseSchema;
+      select?: NodePath | null;
+      coalesce?: string;
+      /** carries a rename into the preview data before it is fitted to the new schema */
+      migrateData?: (data: unknown) => unknown;
+    }
   | { type: 'setData'; data: unknown }
   | { type: 'setBase'; base: BaseChoice }
   | { type: 'renameDoc'; name: string }
@@ -115,7 +122,10 @@ export const reducer = (state: State, action: Action): State => {
       return commit(
         state,
         {
-          docs: updateActive(state, { schema: action.schema, data: fitData(action.schema, doc.data) }),
+          docs: updateActive(state, {
+            schema: action.schema,
+            data: fitData(action.schema, action.migrateData ? action.migrateData(doc.data) : doc.data)
+          }),
           selected: action.select === undefined ? state.selected : action.select
         },
         action.coalesce
