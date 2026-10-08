@@ -271,14 +271,23 @@ const TreeRow = ({
   };
   const indent = { paddingLeft: `${0.5 + row.depth * 1.1}rem` };
   const dropClass = drop ? `drop-${drop}` : '';
+  // the add menu floats above the page and positions itself against this button
+  const [addButton, setAddButton] = useState<HTMLButtonElement | null>(null);
 
   if (row.kind === 'add') {
     return (
       <div ref={setRef} className={`tree-row add-row ${dropClass}`} style={indent}>
-        <button type="button" className="add-btn" onClick={onOpenMenu} aria-haspopup="menu" aria-expanded={menuOpen}>
+        <button
+          ref={setAddButton}
+          type="button"
+          className="add-btn"
+          onClick={onOpenMenu}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+        >
           + Add field
         </button>
-        {menuOpen && <AddMenu onPick={onAdd} onClose={onCloseMenu} />}
+        {menuOpen && <AddMenu anchor={addButton} onPick={onAdd} onClose={onCloseMenu} />}
       </div>
     );
   }
