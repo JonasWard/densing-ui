@@ -26,6 +26,8 @@ export interface Analysis {
   total: BitRange | null;
   /** bits the payload header spends on choosing presets (0 without definitions) */
   header: number;
+  /** number of (deprecated) pointer fields, in the fields and the templates */
+  pointerCount: number;
   /** field name → node path, in densing's resolution order, for pointers */
   byName: Map<string, NodePath>;
 }
@@ -54,6 +56,7 @@ const shallow = (field: DenseField): DenseField => {
       return { ...field, field: placeholder('__inner'), defaultValue: undefined };
     case 'pointer':
     case 'reference_numeric':
+    case 'reference':
       // their targets are checked against the whole schema in step 3
       return placeholder(field.name);
     default:
@@ -75,12 +78,20 @@ const namePaths = (schema: DenseSchema): Map<string, string[]> => {
     for (const [childPath, child] of childEntries(field, path)) visit(child, childPath, inner);
   };
   schema.fields.forEach((f, i) => visit(f, ['fields', i], ''));
+  // densing reports template errors as `templates[i]` and `templates[i].<child>`: the template's own
+  // name is not part of the path
+  (schema.templates ?? []).forEach((t, i) => {
+    const root = pathKey(['templates', i]);
+    add(root, root);
+    const inner = t.type === 'array' ? `${root}[]` : root;
+    for (const [childPath, child] of childEntries(t, ['templates', i])) visit(child, childPath, inner);
+  });
   return out;
 };
 
 const listsOf = (schema: DenseSchema): [NodePath, DenseField[]][] => {
   const lists: [NodePath, DenseField[]][] = [[['fields'], schema.fields]];
-  for (const { path, field } of listNodes(schema)) {
+  for (const { path, field } of listNodes(schema, { templates: true })) {
     if (field.type === 'object') lists.push([[...path, 'fields'], field.fields]);
     if (field.type === 'union')
       for (const [k, fs] of Object.entries(field.variants)) lists.push([[...path, 'variants', k], fs]);
@@ -93,9 +104,10 @@ export const analyze = (schema: DenseSchema): Analysis => {
   const rootErrors: string[] = [];
   const push = (key: string, message: string) => errors.set(key, [...(errors.get(key) ?? []), message]);
 
-  const nodes = listNodes(schema);
+  const nodes = listNodes(schema, { templates: true });
+  // pointers resolve against the fields only: templates are not pointer targets
   const byName = new Map<string, NodePath>();
-  for (const { path, field } of nodes) if (!byName.has(field.name)) byName.set(field.name, path);
+  for (const { path, field } of listNodes(schema)) if (!byName.has(field.name)) byName.set(field.name, path);
 
   // 1. every node on its own
   for (const { path, field } of nodes) {
@@ -107,6 +119,8 @@ export const analyze = (schema: DenseSchema): Analysis => {
     if (field.type === 'pointer' && typeof field.targetName !== 'string')
       push(pathKey(path), '"targetName" must be a string');
     if (field.type === 'reference_numeric' && !field.ref) push(pathKey(path), 'choose a definition');
+    if (field.type === 'reference' && !(Number.isInteger(field.ref) && field.ref >= 0))
+      push(pathKey(path), 'choose a template');
   }
   // 1b. every numeric definition on its own
   definitionsOf(schema).forEach((d, i) => {
@@ -131,7 +145,7 @@ export const analyze = (schema: DenseSchema): Analysis => {
   if (errors.size === 0 && rootErrors.length === 0) {
     const names = namePaths(schema);
     for (const { path, message } of validateSchema(schema).errors) {
-      if (/^definitions\[\d+\]$/.test(path)) {
+      if (/^(definitions|templates)\[\d+\]$/.test(path)) {
         push(path, message);
         continue;
       }
@@ -170,7 +184,16 @@ export const analyze = (schema: DenseSchema): Analysis => {
     total = { min: minBits, max: maxBits };
   }
 
-  return { schema: valid, errors, rootErrors, ranges, total, header: valid ? headerBits(valid) : 0, byName };
+  return {
+    schema: valid,
+    errors,
+    rootErrors,
+    ranges,
+    total,
+    header: valid ? headerBits(valid) : 0,
+    pointerCount: nodes.filter((n) => n.field.type === 'pointer').length,
+    byName
+  };
 };
 
 /** Characters needed for `bits` bits in a base with `base` symbols (same rule as densing) */

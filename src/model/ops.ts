@@ -3,7 +3,7 @@ import { getAt, isPrefix, listNodes, parentListPath, setAt, type NodePath } from
 
 export type FieldType = DenseField['type'];
 
-export const FIELD_TYPES: { type: FieldType; label: string; hint: string }[] = [
+export const FIELD_TYPES: { type: FieldType; label: string; hint: string; deprecated?: boolean }[] = [
   { type: 'bool', label: 'Boolean', hint: '1 bit' },
   { type: 'int', label: 'Integer', hint: 'min..max' },
   { type: 'fixed', label: 'Fixed point', hint: 'min..max by precision' },
@@ -13,7 +13,8 @@ export const FIELD_TYPES: { type: FieldType; label: string; hint: string }[] = [
   { type: 'enum_array', label: 'Enum array', hint: 'packed list of options' },
   { type: 'optional', label: 'Optional', hint: 'presence bit + field' },
   { type: 'union', label: 'Union', hint: 'tagged variants' },
-  { type: 'pointer', label: 'Pointer', hint: 'refers to a field, for recursion' },
+  { type: 'reference', label: 'Template', hint: 'a shape defined once' },
+  { type: 'pointer', label: 'Pointer', hint: 'deprecated, use a template', deprecated: true },
   { type: 'reference_numeric', label: 'Shared number', hint: 'range from a definition' }
 ];
 
@@ -62,6 +63,8 @@ export const fieldTemplate = (type: FieldType, name: string, taken: Set<string> 
       return { type, name, targetName: '' };
     case 'reference_numeric':
       return { type, name, ref: '' };
+    case 'reference':
+      return { type, name, ref: -1 };
   }
 };
 
@@ -70,6 +73,7 @@ export const changeType = (field: DenseField, type: FieldType, schema: DenseSche
   if (field.type === type) return field;
   const next = fieldTemplate(type, field.name, allNames(schema));
   if (next.type === 'reference_numeric') return { ...next, ref: schema.definitions?.[0]?.name ?? '' };
+  if (next.type === 'reference') return { ...next, ref: schema.templates?.length ? 0 : -1 };
   if ((field.type === 'int' || field.type === 'fixed') && (next.type === 'int' || next.type === 'fixed')) {
     const min = next.type === 'int' ? Math.ceil(field.min) : field.min;
     const max = next.type === 'int' ? Math.floor(field.max) : field.max;
@@ -107,7 +111,13 @@ export const removeField = (schema: DenseSchema, path: NodePath): DenseSchema =>
   );
 };
 
-export const canMove = (from: NodePath, toList: NodePath) => !!parentListPath(from) && !isPrefix(from, toList);
+/** Template roots stay put: their position is the index references use */
+const isTemplatesList = (list: NodePath) => list.length === 1 && list[0] === 'templates';
+
+export const canMove = (from: NodePath, toList: NodePath) => {
+  const src = parentListPath(from);
+  return !!src && !isPrefix(from, toList) && !isTemplatesList(src.list) && !isTemplatesList(toList);
+};
 
 /**
  * Move the field at `from` into `toList` at `toIndex` (an index in the list as it is *before* the move).
@@ -162,7 +172,8 @@ const renameDeep = (field: DenseField, taken: Set<string>): DenseField => {
 
 export const duplicateField = (schema: DenseSchema, path: NodePath): { schema: DenseSchema; path: NodePath } | null => {
   const parent = parentListPath(path);
-  if (!parent) return null;
+  // a copied template would be referenced by nothing, which densing rejects
+  if (!parent || isTemplatesList(parent.list)) return null;
   const copy = renameDeep(getAt(schema, path), allNames(schema));
   return { schema: insertField(schema, parent.list, parent.index + 1, copy), path: [...parent.list, parent.index + 1] };
 };

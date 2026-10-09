@@ -1,4 +1,4 @@
-import { getDefaultData, type DenseSchema } from 'densing';
+import { getDefaultData, schemaFromJson, type DenseSchema } from 'densing';
 import { analyze } from './analyze';
 import { reconcile } from './data';
 import { migratePresets } from './definitions';
@@ -36,6 +36,8 @@ export type Action =
   | { type: 'renameDoc'; name: string }
   | { type: 'newDoc'; name?: string; schema?: DenseSchema; data?: unknown }
   | { type: 'openExample'; id: string }
+  /** a schema + data from a link: reuses a document with the same schema, else adds one */
+  | { type: 'openShared'; name: string; schema: DenseSchema; data: unknown }
   | { type: 'switchDoc'; id: string }
   | { type: 'deleteDoc'; id: string }
   | { type: 'undo' }
@@ -149,6 +151,27 @@ export const reducer = (state: State, action: Action): State => {
       const doc = docFromExample(action.id);
       return commit(state, { docs: [...state.docs, doc], activeId: doc.id, selected: null });
     }
+    case 'openShared': {
+      const same = state.docs.find((d) => sameSchema(d.schema, action.schema));
+      if (same) {
+        const data = action.data === undefined ? same.data : fitData(same.schema, action.data);
+        return {
+          ...state,
+          activeId: same.id,
+          selected: null,
+          lastEdit: null,
+          docs: state.docs.map((d) => (d.id === same.id ? { ...d, data } : d))
+        };
+      }
+      const doc: Doc = {
+        id: newId(),
+        name: action.name,
+        schema: action.schema,
+        data: fitData(action.schema, action.data ?? getDefaultData(action.schema)),
+        base: 'base64url'
+      };
+      return commit(state, { docs: [...state.docs, doc], activeId: doc.id, selected: null });
+    }
     case 'switchDoc':
       return { ...state, activeId: action.id, selected: null, lastEdit: null };
     case 'deleteDoc': {
@@ -179,5 +202,25 @@ export const reducer = (state: State, action: Action): State => {
         lastEdit: null
       };
     }
+  }
+};
+
+/** JSON with sorted keys, so two equal schemas compare equal whatever their key order */
+const stable = (v: unknown): string =>
+  Array.isArray(v)
+    ? `[${v.map(stable).join(',')}]`
+    : v && typeof v === 'object'
+      ? `{${Object.keys(v)
+          .sort()
+          .map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`)
+          .join(',')}}`
+      : JSON.stringify(v);
+
+/** Same schema once both are normalised by densing (a stored one may leave defaults out) */
+const sameSchema = (a: DenseSchema, b: DenseSchema) => {
+  try {
+    return stable(schemaFromJson(a)) === stable(schemaFromJson(b));
+  } catch {
+    return false;
   }
 };

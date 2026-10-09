@@ -8,12 +8,14 @@ import {
   int,
   object,
   optional,
-  pointer,
+  reference,
   referenceNumeric,
   schema,
   schemaWithDefinitions,
+  template,
   union,
-  type DenseSchema
+  type DenseSchema,
+  type Template
 } from 'densing';
 
 export interface Example {
@@ -24,7 +26,19 @@ export interface Example {
   data: unknown;
 }
 
-const plain = (s: { fields: unknown; definitions?: unknown }): DenseSchema => JSON.parse(JSON.stringify(s));
+const plain = (s: { fields: unknown; definitions?: unknown; templates?: unknown }): DenseSchema =>
+  JSON.parse(JSON.stringify(s));
+
+// templates are defined once and only used through references
+const expr: Template = template(
+  union('expr', enumeration('type', ['number', 'add', 'multiply']), {
+    number: [int('value', 0, 1000)],
+    add: [reference('left', () => expr), reference('right', () => expr)],
+    multiply: [reference('left', () => expr), reference('right', () => expr)]
+  })
+);
+
+const vec3 = template(object('vec3', fixed('x', -10, 10, 0.01), fixed('y', -10, 10, 0.01), fixed('z', -10, 10, 0.01)));
 
 export const examples: Example[] = [
   {
@@ -139,16 +153,8 @@ export const examples: Example[] = [
   {
     id: 'expression',
     name: 'Expression Tree',
-    description: 'Recursion through pointers: (5 + 3) × 2',
-    schema: plain(
-      schema(
-        union('expr', enumeration('type', ['number', 'add', 'multiply']), {
-          number: [int('value', 0, 1000)],
-          add: [pointer('left', 'expr'), pointer('right', 'expr')],
-          multiply: [pointer('left', 'expr'), pointer('right', 'expr')]
-        })
-      )
-    ),
+    description: 'A recursive template: (5 + 3) × 2',
+    schema: plain(schema(reference('expr', expr))),
     data: {
       expr: {
         type: 'multiply',
@@ -156,6 +162,13 @@ export const examples: Example[] = [
         right: { type: 'number', value: 2 }
       }
     }
+  },
+  {
+    id: 'pose',
+    name: 'Pose',
+    description: 'One vec3 template, used for position and rotation',
+    schema: plain(schema(reference('position', vec3), reference('rotation', vec3))),
+    data: { position: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: -0.5 } }
   },
   {
     id: 'cita',

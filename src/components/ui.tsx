@@ -136,12 +136,20 @@ export const Segmented = <T extends string>({
   </div>
 );
 
-export const CopyButton = ({ text, label = 'Copy' }: { text: string; label?: string }) => {
+export const CopyButton = ({
+  text,
+  label = 'Copy',
+  className = 'btn small'
+}: {
+  text: string;
+  label?: string;
+  className?: string;
+}) => {
   const [done, setDone] = useState(false);
   return (
     <button
       type="button"
-      className="btn small"
+      className={className}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(text);

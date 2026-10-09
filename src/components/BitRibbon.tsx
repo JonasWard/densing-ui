@@ -40,9 +40,11 @@ export const BitRibbon = () => {
   }, [segments]);
 
   const selectedKey = state.selected ? pathKey(state.selected) : undefined;
+  // a segment belongs to its own node, and to the references and definition it was reached through
+  const belongs = (s: Segment, key: string) => coversPath(key, s.nodeKey) || s.alsoKeys.some((k) => coversPath(key, k));
   const lit = (s: Segment | undefined) =>
     !!s &&
-    ((hover.nodeKey !== undefined && (coversPath(hover.nodeKey, s.nodeKey) || s.refKey === hover.nodeKey)) ||
+    ((hover.nodeKey !== undefined && belongs(s, hover.nodeKey)) ||
       (hover.dataPath !== undefined && coversPath(hover.dataPath, s.dataPath)));
   const anyHover = hover.nodeKey !== undefined || hover.dataPath !== undefined;
   const hovered = segments.find(lit);
@@ -94,9 +96,7 @@ export const BitRibbon = () => {
                       <span
                         key={j}
                         className={`bit ${isPad ? 'pad' : `c${colorOf.get(s?.nodeKey ?? '') ?? 0} k-${s?.kind}`} ${lit(s) ? 'lit' : ''} ${
-                          s && selectedKey && (coversPath(selectedKey, s.nodeKey) || s.refKey === selectedKey)
-                            ? 'sel'
-                            : ''
+                          s && selectedKey && belongs(s, selectedKey) ? 'sel' : ''
                         } ${s && s.start === i ? 'seg-start' : ''}`}
                         title={
                           isPad

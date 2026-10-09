@@ -14,6 +14,8 @@ export interface EditorContextValue {
   analysis: Analysis;
   hover: Hover;
   setHover: (h: Hover) => void;
+  /** a URL that reopens the active schema with its preview data, `null` while the schema is invalid */
+  link: string | null;
 }
 
 export const EditorContext = createContext<EditorContextValue | null>(null);

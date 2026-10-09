@@ -73,7 +73,9 @@ const FieldRow = (props: RowProps) => {
   const { field, node, dataPath, ctx, label } = props;
   const error = ctx.errors.get(dataPath);
   const lit = hover.dataPath === dataPath;
-  const compound = ['object', 'array', 'union', 'optional', 'pointer'].includes(field.type);
+  // a reference lays out like its template
+  const shape = field.type === 'reference' ? (ctx.schema.templates?.[field.ref] ?? field) : field;
+  const compound = ['object', 'array', 'union', 'optional', 'pointer'].includes(shape.type);
   return (
     <div
       className={`data-row ${compound ? 'compound' : ''} ${lit ? 'lit' : ''} ${error ? 'has-error' : ''}`}
@@ -316,6 +318,21 @@ const Control = ({ field, node, dataPath, value, ctx, onChange }: RowProps) => {
             {preset}
           </span>
         </div>
+      );
+    }
+    case 'reference': {
+      const tf = ctx.schema.templates?.[field.ref];
+      if (!tf) return <span className="muted">unresolved</span>;
+      if (ctx.depth > 40) return <span className="muted">too deep to show</span>;
+      return (
+        <Control
+          field={{ ...tf, name: field.name }}
+          node={['templates', field.ref]}
+          dataPath={dataPath}
+          value={value}
+          ctx={{ ...ctx, depth: ctx.depth + 1 }}
+          onChange={onChange}
+        />
       );
     }
     case 'pointer': {

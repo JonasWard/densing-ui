@@ -58,6 +58,10 @@ export const defaultFor = (
         const d = findDefinition(schema, f.ref);
         return d ? presetAsField(d, activePresetName(d, presets)).defaultValue : null;
       }
+      case 'reference': {
+        const target = schema.templates?.[f.ref];
+        return target ? visit(target, inner, minimal || expanding.has(target)) : null;
+      }
       case 'pointer': {
         const target = resolve(f.targetName);
         return target ? visit(target, inner, minimal || expanding.has(target)) : null;
@@ -125,6 +129,10 @@ export const reconcile = (schema: DenseSchema, data: any, byName: Map<string, No
           [f.discriminator.name, tag],
           ...f.variants[tag].map((c) => [c.name, c.name in v ? visit(c, v[c.name], depth + 1) : fresh(c)])
         ]);
+      }
+      case 'reference': {
+        const target = schema.templates?.[f.ref];
+        return target ? visit(target, v, depth + 1) : null;
       }
       case 'pointer': {
         const target = resolve(f.targetName);
