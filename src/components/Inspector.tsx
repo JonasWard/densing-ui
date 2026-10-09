@@ -16,7 +16,6 @@ import {
   duplicateField,
   fixedSteps,
   normalizeDefault,
-  removeField,
   removeVariant,
   renameVariant,
   uniqueName,
@@ -27,7 +26,9 @@ import {
   type WrapKind
 } from '../model/ops';
 import { extractDefinition } from '../model/definitions';
-import { getField, parentListPath, pathKey, type NodePath } from '../model/paths';
+import { getField, isTemplateRoot, parentListPath, pathKey, type NodePath } from '../model/paths';
+import { deleteNode, makeTemplate } from '../model/templates';
+import { PointerDeprecation, ReferenceEditor, TemplateUses } from './TemplateInspector';
 import { coversPath, useEditor } from '../editor';
 import { DefinitionInspector, ReferenceNumericEditor } from './DefinitionInspector';
 import { Field, NumberInput, Stat, TextInput, Toggle, TypeChip } from './ui';
@@ -63,6 +64,7 @@ const SchemaOverview = () => {
           value={t ? formatBits({ min: charsForBits(t.min, 38), max: charsForBits(t.max, 38) }) : '?'}
         />
       </div>
+      <PointerDeprecation />
       {analysis.rootErrors.map((e) => (
         <p key={e} className="error-box">
           {e}
@@ -118,6 +120,7 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
       coalesce: coalesce && `${key}:${coalesce}`
     });
   const errors = analysis.errors.get(key);
+  const templateRoot = isTemplateRoot(path);
   const inList = !!parentListPath(path);
   const range = analysis.ranges.get(key);
 
@@ -129,6 +132,7 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
       <div className="panel-head">
         <TypeChip type={field.type} />
         <h2 className="truncate">{field.name || 'unnamed'}</h2>
+        {templateRoot && <span className="template-badge">template</span>}
         <span className="bits-badge big">{formatBits(range)} bits</span>
       </div>
       <p className="path muted small mono">{key}</p>
@@ -140,7 +144,7 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
 
       <div className="grid-2">
         <label className="form-field">
-          <span className="form-label">Name</span>
+          <span className="form-label">{templateRoot ? 'Type name' : 'Name'}</span>
           <input
             ref={nameRef}
             className="input"
@@ -148,6 +152,7 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
             spellCheck={false}
             onChange={(e) => set({ ...field, name: e.target.value }, 'name')}
           />
+          {templateRoot && <span className="form-hint">the name of the shape, not a key in the data</span>}
         </label>
         <Field label="Type">
           <select
@@ -160,7 +165,7 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
               })
             }
           >
-            {FIELD_TYPES.map((t) => (
+            {FIELD_TYPES.filter((t) => !t.deprecated || t.type === field.type).map((t) => (
               <option key={t.type} value={t.type}>
                 {t.label}
               </option>
@@ -170,9 +175,10 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
       </div>
 
       <TypeEditor field={field} set={set} path={path} />
+      {templateRoot && <TemplateUses index={path[1] as number} />}
 
       <div className="actions">
-        {inList && (
+        {inList && !templateRoot && (
           <button
             type="button"
             className="btn small"
@@ -197,6 +203,19 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
             Share range
           </button>
         )}
+        {!templateRoot && field.type !== 'reference' && (
+          <button
+            type="button"
+            className="btn small"
+            title="Move this field's shape into a template, so other fields can use it too"
+            onClick={() => {
+              const r = makeTemplate(doc.schema, path);
+              if (r) dispatch({ type: 'editSchema', schema: r.schema, select: r.templatePath });
+            }}
+          >
+            Make template
+          </button>
+        )}
         <span className="muted small">Wrap in</span>
         {(['optional', 'array', 'object'] as WrapKind[]).map((k) => (
           <button key={k} type="button" className="btn small" onClick={() => wrap(k)}>
@@ -213,7 +232,7 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
           <button
             type="button"
             className="btn small danger"
-            onClick={() => dispatch({ type: 'editSchema', schema: removeField(doc.schema, path), select: null })}
+            onClick={() => dispatch({ type: 'editSchema', schema: deleteNode(doc.schema, path), select: null })}
           >
             Delete
           </button>
@@ -256,7 +275,14 @@ const TypeEditor = ({ field, set, path }: { field: DenseField; set: Setter; path
     case 'union':
       return <UnionEditor field={field} set={set} path={path} />;
     case 'pointer':
-      return <PointerEditor field={field} set={set} path={path} />;
+      return (
+        <>
+          <PointerDeprecation />
+          <PointerEditor field={field} set={set} path={path} />
+        </>
+      );
+    case 'reference':
+      return <ReferenceEditor field={field} path={path} />;
     case 'reference_numeric':
       return <ReferenceNumericEditor field={field} path={path} />;
   }

@@ -2,9 +2,10 @@ import { useRef, useState } from 'react';
 import { examples } from '../model/examples';
 import { useEditor } from '../editor';
 import { parseImport } from '../model/import';
+import { CopyButton } from './ui';
 
 export const Toolbar = () => {
-  const { state, doc, dispatch } = useEditor();
+  const { state, doc, dispatch, link } = useEditor();
   const [importing, setImporting] = useState(false);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +71,13 @@ export const Toolbar = () => {
         <button type="button" className="btn" onClick={() => setImporting(!importing)}>
           Import
         </button>
+        {link ? (
+          <CopyButton text={link} label="Copy link" className="btn" />
+        ) : (
+          <button type="button" className="btn" disabled title="Fix the schema to get a link">
+            Copy link
+          </button>
+        )}
         <button
           type="button"
           className="btn"

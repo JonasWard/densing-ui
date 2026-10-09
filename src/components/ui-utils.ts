@@ -11,7 +11,8 @@ export const TYPE_GLYPH: Record<FieldType, string> = {
   optional: '?',
   union: '|',
   pointer: '↗',
-  reference_numeric: '#→'
+  reference_numeric: '#→',
+  reference: '&'
 };
 
 export const download = (filename: string, text: string, type = 'text/plain') => {

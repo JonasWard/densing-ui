@@ -1,14 +1,14 @@
-import { generateTypes } from 'densing';
+import { densingSchema, generateTypes } from 'densing';
 import { useMemo, useState } from 'react';
 import { identifier, schemaToCode } from '../model/codegen';
 import { useEditor } from '../editor';
 import { CopyButton, Segmented } from './ui';
 import { download } from './ui-utils';
 
-type Tab = 'json' | 'ts' | 'types' | 'cli';
+type Tab = 'json' | 'ts' | 'types' | 'cli' | 'link';
 
 export const ExportPanel = () => {
-  const { doc, analysis } = useEditor();
+  const { doc, analysis, link } = useEditor();
   const [tab, setTab] = useState<Tab>('ts');
   const slug =
     doc.name
@@ -27,6 +27,8 @@ export const ExportPanel = () => {
         return s
           ? { text: generateTypes(s, identifier(doc.name)), file: `${slug}.types.ts`, type: 'text/typescript' }
           : null;
+      case 'link':
+        return link ? { text: link, file: `${slug}.url.txt`, type: 'text/plain' } : null;
       case 'cli':
         return {
           text: [
@@ -36,13 +38,18 @@ export const ExportPanel = () => {
             '',
             `densing size -s ${slug}.json`,
             `densing encode -s ${slug}.json data.json`,
-            `densing decode -s ${slug}.json <encoded>`
+            `densing decode -s ${slug}.json <encoded>`,
+            `densing schema -s ${slug}.json --dense   # the schema as a compact string`
           ].join('\n'),
           file: `${slug}.sh`,
           type: 'text/plain'
         };
     }
-  }, [tab, analysis.schema, doc.schema, doc.name, slug]);
+  }, [tab, analysis.schema, doc.schema, doc.name, slug, link]);
+  const sizes = useMemo(() => {
+    if (tab !== 'link' || !analysis.schema) return null;
+    return { dense: densingSchema(analysis.schema).length, json: JSON.stringify(analysis.schema).length };
+  }, [tab, analysis.schema]);
 
   return (
     <div className="export">
@@ -55,7 +62,8 @@ export const ExportPanel = () => {
             { value: 'ts', label: 'Builder' },
             { value: 'types', label: 'Types' },
             { value: 'json', label: 'JSON' },
-            { value: 'cli', label: 'CLI' }
+            { value: 'cli', label: 'CLI' },
+            { value: 'link', label: 'Link' }
           ]}
         />
         {out && (
@@ -67,7 +75,17 @@ export const ExportPanel = () => {
           </span>
         )}
       </div>
-      {out ? <pre className="code">{out.text}</pre> : <p className="muted small">Fix the schema to export it.</p>}
+      {tab === 'link' && sizes && link && (
+        <p className="muted small">
+          Opens this schema with its preview data. {link.length} characters; the schema itself is {sizes.dense} as a
+          densing string, against {sizes.json} as JSON.
+        </p>
+      )}
+      {out ? (
+        <pre className={`code ${tab === 'link' ? 'wrap' : ''}`}>{out.text}</pre>
+      ) : (
+        <p className="muted small">Fix the schema to export it.</p>
+      )}
       {tab === 'json' && !analysis.schema && (
         <p className="muted small">Showing the work in progress JSON: it does not load with schemaFromJson yet.</p>
       )}

@@ -58,16 +58,23 @@ export interface NodeEntry {
   depth: number;
 }
 
-/** Every field in display order (depth first), discriminators and enum_array enums excluded */
-export const listNodes = (schema: DenseSchema): NodeEntry[] => {
+/**
+ * Every field in display order (depth first). With `templates`, the template subtrees follow the
+ * fields; without, only the fields (which is also what pointers can resolve to).
+ */
+export const listNodes = (schema: DenseSchema, opts: { templates?: boolean } = {}): NodeEntry[] => {
   const out: NodeEntry[] = [];
   const visit = (field: DenseField, path: NodePath, depth: number) => {
     out.push({ path, field, depth });
     for (const [childPath, child] of childEntries(field, path)) visit(child, childPath, depth + 1);
   };
   schema.fields.forEach((f, i) => visit(f, ['fields', i], 0));
+  if (opts.templates) (schema.templates ?? []).forEach((t, i) => visit(t, ['templates', i], 0));
   return out;
 };
+
+/** `['templates', i]`: the root of a template */
+export const isTemplateRoot = (path: NodePath) => path.length === 2 && path[0] === 'templates';
 
 export const childEntries = (field: DenseField, path: NodePath): [NodePath, DenseField][] => {
   switch (field.type) {

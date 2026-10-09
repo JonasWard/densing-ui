@@ -20,12 +20,13 @@ import {
   fieldTemplate,
   insertField,
   moveField,
-  removeField,
   uniqueName,
   type FieldType
 } from '../model/ops';
 import { pathKey, samePath, type NodePath } from '../model/paths';
 import { useEditor } from '../editor';
+import { addTemplate, deleteNode, templateUses } from '../model/templates';
+import { isTemplateRoot } from '../model/paths';
 import { addDefinition, definitionsOf, presetNames, usesOf } from '../model/definitions';
 import { AddMenu } from './AddMenu';
 import { buildRows, dropTargetFor, type DropTarget, type Row } from './tree-rows';
@@ -42,7 +43,8 @@ const BASE_NAMES: Record<FieldType, string> = {
   optional: 'maybe',
   union: 'choice',
   pointer: 'ref',
-  reference_numeric: 'size'
+  reference_numeric: 'size',
+  reference: 'part'
 };
 
 export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }) => {
@@ -83,12 +85,28 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
         field = { ...field, ref: added.name };
       }
     }
+    if (field.type === 'reference') {
+      // a reference needs a template: use the first one, or create one
+      if (!schema.templates?.length) schema = addTemplate(schema).schema;
+      field = { ...field, ref: 0 };
+    }
     dispatch({ type: 'editSchema', schema: insertField(schema, list, index, field), select: [...list, index] });
     setMenuFor(null);
     onRequestRename();
   };
 
   const select = (path: NodePath | null) => dispatch({ type: 'select', path });
+
+  /** a short hint after the name: what a reference uses, how often a template is used */
+  const rowNote = (row: Extract<Row, { kind: 'field' }>): string | undefined => {
+    const f = row.field;
+    if (f.type === 'reference') return `→ ${doc.schema.templates?.[f.ref]?.name ?? '?'}`;
+    if (isTemplateRoot(row.path)) {
+      const uses = templateUses(doc.schema, row.index).length;
+      return `${uses} use${uses === 1 ? '' : 's'}`;
+    }
+    return undefined;
+  };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.target as HTMLElement).closest('input, textarea, select, .add-menu')) return;
@@ -111,7 +129,7 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
       if ((e.key === 'ArrowLeft') !== isCollapsed) toggle(current.key);
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && current?.list) {
       e.preventDefault();
-      const after = removeField(doc.schema, current.path);
+      const after = deleteNode(doc.schema, current.path);
       const siblings = fieldRows.filter((r) => r.list && samePath(r.list, current.list) && r.key !== current.key);
       const nextSel = siblings.length ? [...current.list, Math.min(current.index, siblings.length - 1)] : null;
       dispatch({ type: 'editSchema', schema: after, select: nextSel });
@@ -208,6 +226,11 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
               onOpenMenu={() => setMenuFor(menuFor === row.key ? null : row.key)}
               onCloseMenu={() => setMenuFor(null)}
               onAdd={(type) => row.kind === 'add' && addField(row.list, row.index, type)}
+              note={row.kind === 'field' ? rowNote(row) : undefined}
+              onAddTemplate={() => {
+                const r = addTemplate(doc.schema);
+                dispatch({ type: 'editSchema', schema: r.schema, select: r.path });
+              }}
             />
           ))}
         </div>
@@ -244,6 +267,8 @@ interface TreeRowProps {
   onOpenMenu: () => void;
   onCloseMenu: () => void;
   onAdd: (t: FieldType) => void;
+  note?: string;
+  onAddTemplate: () => void;
 }
 
 const TreeRow = ({
@@ -260,9 +285,11 @@ const TreeRow = ({
   onHover,
   onOpenMenu,
   onCloseMenu,
-  onAdd
+  onAdd,
+  note,
+  onAddTemplate
 }: TreeRowProps) => {
-  const movable = row.kind === 'field' && !!row.list;
+  const movable = row.kind === 'field' && !!row.list && !isTemplateRoot(row.path);
   const drag = useDraggable({ id: row.key, disabled: !movable });
   const dropZone = useDroppable({ id: row.key });
   const setRef = (el: HTMLElement | null) => {
@@ -288,6 +315,19 @@ const TreeRow = ({
           + Add field
         </button>
         {menuOpen && <AddMenu anchor={addButton} onPick={onAdd} onClose={onCloseMenu} />}
+      </div>
+    );
+  }
+
+  if (row.kind === 'section') {
+    return (
+      <div ref={setRef} className="tree-row section-row">
+        <span className="form-label">{row.label}</span>
+        {row.count === 0 && <span className="muted small">none yet</span>}
+        <span className="row-spacer" />
+        <button type="button" className="add-btn" onClick={onAddTemplate}>
+          + Template
+        </button>
       </div>
     );
   }
@@ -356,6 +396,8 @@ const TreeRow = ({
       <span className="row-name">{field.name || <em className="muted">unnamed</em>}</span>
       {row.slot && <span className="slot-tag">{row.slot}</span>}
       {field.type === 'pointer' && <span className="muted small">→ {field.targetName || '?'}</span>}
+      {field.type === 'pointer' && <span className="deprecated-tag">deprecated</span>}
+      {note && <span className="muted small">{note}</span>}
       {field.type === 'reference_numeric' && <span className="muted small">→ {field.ref || '?'}</span>}
       {field.type === 'array' && (
         <span className="muted small">

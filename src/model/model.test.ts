@@ -26,10 +26,23 @@ import {
   wrapField
 } from './ops';
 import { getAt, pathKey } from './paths';
+import { decodeLink, encodeLink } from './share';
+import {
+  canonicalTemplateOrder,
+  convertPointers,
+  countPointers,
+  inlineReference,
+  makeTemplate,
+  removeTemplate,
+  templateUses
+} from './templates';
 import { layoutBits } from './ribbon';
 
 const evalCode = (code: string): DenseSchema => {
-  const body = code.replace(/^import .*$/m, '').replace(/export const (\w+) =/, 'return');
+  const body = code
+    .replace(/^import .*$/gm, '')
+    .replace(/: Template =/g, ' =')
+    .replace(/export const (\w+) =/, 'return');
   const names = Object.keys(densing);
   return new Function(...names, body)(...names.map((n) => (densing as Record<string, unknown>)[n]));
 };
@@ -44,7 +57,7 @@ describe('examples', () => {
     });
 
     it(`${ex.id}: codegen round-trips`, () => {
-      expect(evalCode(schemaToCode(ex.schema, ex.name))).toEqual(schemaFromJson(ex.schema));
+      expect(evalCode(schemaToCode(ex.schema, ex.name))).toEqual(schemaFromJson(canonicalTemplateOrder(ex.schema)));
     });
 
     it(`${ex.id}: ribbon matches the encoder bit for bit`, () => {
@@ -218,7 +231,7 @@ describe('numeric definitions', () => {
       nodeKey: 'definitions[0]',
       dataPath: '$presets.length'
     });
-    expect(segs[1]).toMatchObject({ refKey: 'definitions[0]', bits: 14 });
+    expect(segs[1]).toMatchObject({ alsoKeys: ['definitions[0]'], bits: 14 });
     expect(segs.reduce((n, x) => n + x.bits, 0)).toBe(encode(a.schema!, data, 'binary').length);
   });
 
@@ -298,5 +311,149 @@ describe('renames keep the preview preset', () => {
       unknown
     >;
     expect(removed).toEqual({ $presets: { length: 'mm' }, width: 0, height: 0, depth: 80 });
+  });
+});
+
+describe('templates (densing 0.4.4)', () => {
+  const ex = (id: string) => examples.find((e) => e.id === id)!;
+  const enc = (schema: DenseSchema, data: unknown) => encode(schemaFromJson(schema), data as object);
+
+  it('encode like the densing README', () => {
+    expect(enc(ex('pose').schema, ex('pose').data)).toBe('iZLCij6H0O2');
+    expect(enc(ex('expression').schema, ex('expression').data)).toBe('kAUAMAI');
+    expect(countPointers(ex('expression').schema)).toBe(0);
+  });
+
+  it('ribbon walks references and tags their bits with the reference field', () => {
+    const a = analyze(ex('pose').schema);
+    const segs = layoutBits(a.schema!, ex('pose').data, a.byName);
+    expect(segs).toHaveLength(6);
+    expect(segs[0]).toMatchObject({
+      nodeKey: 'templates[0].fields[0]',
+      dataPath: 'position.x',
+      alsoKeys: ['fields[0]']
+    });
+    expect(segs[3]).toMatchObject({ dataPath: 'rotation.x', alsoKeys: ['fields[1]'] });
+  });
+
+  it('codegen declares templates, lazily when they refer to themselves or come later', () => {
+    const code = schemaToCode(ex('expression').schema, 'Expression');
+    expect(code).toContain("import type { Template } from 'densing';");
+    expect(code).toContain('const expr: Template = template(');
+    expect(code).toContain("reference('left', () => expr)");
+    expect(code).toContain("schema(\n  reference('expr', expr)\n)");
+    // templates stored out of first-use order still generate the same schema
+    const s: DenseSchema = {
+      templates: [
+        { type: 'object', name: 'b', fields: [{ type: 'int', name: 'y', min: 0, max: 3, defaultValue: 0 }] },
+        { type: 'object', name: 'a', fields: [{ type: 'reference', name: 'inner', ref: 0 }] }
+      ],
+      fields: [
+        { type: 'reference', name: 'p', ref: 1 },
+        { type: 'reference', name: 'q', ref: 0 }
+      ]
+    };
+    expect(canonicalTemplateOrder(s).templates!.map((t) => t.name)).toEqual(['a', 'b']);
+    expect(evalCode(schemaToCode(s, 'Order'))).toEqual(schemaFromJson(canonicalTemplateOrder(s)));
+  });
+
+  it('make template and inline keep the data and the encoding', () => {
+    const net = ex('network');
+    const made = makeTemplate(net.schema, ['fields', 0])!;
+    expect(made.schema.fields[0]).toEqual({ type: 'reference', name: 'network', ref: 0 });
+    expect(made.schema.templates![0].name).toBe('network');
+    expect(enc(made.schema, net.data)).toBe(enc(net.schema, net.data));
+    const back = inlineReference(made.schema, ['fields', 0]);
+    expect(back.templates).toBeUndefined();
+    expect(enc(back, net.data)).toBe(enc(net.schema, net.data));
+    // a recursive template stays while its own body still uses it
+    const inlinedExpr = inlineReference(ex('expression').schema, ['fields', 0]);
+    expect(inlinedExpr.templates).toHaveLength(1);
+    expect(enc(inlinedExpr, ex('expression').data)).toBe('kAUAMAI');
+  });
+
+  it('removeTemplate keeps every other ref on its own template', () => {
+    const t = (name: string): DenseSchema['fields'][number] => ({
+      type: 'object',
+      name,
+      fields: [{ type: 'bool', name: 'on', defaultValue: false }]
+    });
+    const s: DenseSchema = {
+      templates: [t('a'), t('b'), t('c')],
+      fields: [
+        { type: 'reference', name: 'x', ref: 0 },
+        { type: 'reference', name: 'y', ref: 1 },
+        { type: 'reference', name: 'z', ref: 2 }
+      ]
+    };
+    const r = removeTemplate(s, 1);
+    expect(r.templates!.map((x) => x.name)).toEqual(['a', 'c']);
+    expect(r.fields.map((f) => (f as { ref: number }).ref)).toEqual([0, -1, 1]);
+    expect(templateUses(r, 1)).toEqual([['fields', 2]]);
+    expect([...analyze(r).errors.keys()]).toEqual(['fields[1]']);
+  });
+
+  it('flags template problems on their own node', () => {
+    const s: DenseSchema = {
+      templates: [{ type: 'bool', name: 'unused', defaultValue: false }],
+      fields: [{ type: 'int', name: 'a', min: 0, max: 3, defaultValue: 0 }]
+    };
+    let a = analyze(s);
+    expect([...a.errors.keys()]).toEqual(['templates[0]']);
+    expect(a.rootErrors).toEqual([]);
+    a = analyze({
+      ...s,
+      fields: [...s.fields, { type: 'reference', name: 'r', ref: 0 }, { type: 'reference', name: 'gone', ref: 5 }]
+    });
+    expect([...a.errors.keys()]).toEqual(['fields[2]']);
+    expect(a.rootErrors).toEqual([]);
+  });
+
+  it('converting pointers through the store keeps data and encoding', () => {
+    const ptr: DenseSchema = densing.schema(
+      densing.union('expr', densing.enumeration('type', ['number', 'add', 'multiply']), {
+        number: [densing.int('value', 0, 1000)],
+        add: [densing.pointer('left', 'expr'), densing.pointer('right', 'expr')],
+        multiply: [densing.pointer('left', 'expr'), densing.pointer('right', 'expr')]
+      })
+    ) as DenseSchema;
+    const data = ex('expression').data;
+    expect(analyze(ptr).pointerCount).toBe(4);
+    const doc = { id: 'd', name: 'Old', schema: JSON.parse(JSON.stringify(ptr)), data, base: 'base64url' as const };
+    const state: State = { docs: [doc], activeId: 'd', selected: null, past: [], future: [], lastEdit: null };
+    const next = reducer(state, { type: 'editSchema', schema: convertPointers(doc.schema) }).docs[0];
+    expect(countPointers(next.schema)).toBe(0);
+    expect(next.data).toEqual(data);
+    expect(enc(next.schema, next.data)).toBe('kAUAMAI');
+  });
+});
+
+describe('links', () => {
+  for (const ex of examples) {
+    it(`${ex.id}: round-trips name, schema and data`, () => {
+      const schema = schemaFromJson(ex.schema);
+      const decoded = decodeLink(encodeLink(ex.name, schema, ex.data));
+      expect(decoded).toMatchObject({ ok: true, name: ex.name });
+      if (!decoded?.ok) throw new Error('not decoded');
+      expect(decoded.schema).toEqual(schema);
+      expect(decoded.data).toEqual(reconcile(schema, ex.data, analyze(schema).byName));
+    });
+  }
+
+  it('reports a broken link instead of throwing, and ignores other hashes', () => {
+    expect(decodeLink('#s=%%%garbage&d=AA')).toMatchObject({ ok: false });
+    expect(decodeLink('')).toBeNull();
+    expect(decodeLink('#section-2')).toBeNull();
+  });
+
+  it('opening the same link twice reuses the document', () => {
+    const pose = examples.find((e) => e.id === 'pose')!;
+    const schema = schemaFromJson(pose.schema);
+    const doc = { id: 'd', name: 'Mine', schema: pose.schema, data: pose.data, base: 'base64url' as const };
+    const state: State = { docs: [doc], activeId: 'd', selected: null, past: [], future: [], lastEdit: null };
+    const data = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 1, y: 1, z: 1 } };
+    const next = reducer(state, { type: 'openShared', name: 'Pose', schema, data });
+    expect(next.docs).toHaveLength(1);
+    expect(next.docs[0].data).toEqual(data);
   });
 });

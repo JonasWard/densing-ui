@@ -14,7 +14,9 @@ export type Row =
       hasChildren: boolean;
     }
   | { kind: 'variant'; key: string; path: NodePath; union: NodePath; variant: string; depth: number; count: number }
-  | { kind: 'add'; key: string; list: NodePath; depth: number; index: number };
+  | { kind: 'add'; key: string; list: NodePath; depth: number; index: number }
+  /** the heading of the templates, below the fields */
+  | { kind: 'section'; key: string; label: string; count: number; depth: number };
 
 /** Flatten the schema into the rows the outline shows, skipping collapsed subtrees */
 export const buildRows = (schema: DenseSchema, collapsed: Set<string>): Row[] => {
@@ -64,6 +66,10 @@ export const buildRows = (schema: DenseSchema, collapsed: Set<string>): Row[] =>
     }
   };
   list(schema.fields, ['fields'], 0);
+  const templates = schema.templates ?? [];
+  rows.push({ kind: 'section', key: 'templates#', label: 'Templates', count: templates.length, depth: 0 });
+  // template roots sit in the root templates list; their position is the index references use
+  templates.forEach((t, i) => field(t, ['templates', i], 0, ['templates'], i));
   return rows;
 };
 
@@ -71,6 +77,7 @@ export type DropTarget = { rowKey: string; pos: 'before' | 'after' | 'into'; lis
 
 /** Where a drop on `row` at relative height `y` (0..1) lands */
 export const dropTargetFor = (row: Row, y: number, collapsed: Set<string>): DropTarget | null => {
+  if (row.kind === 'section') return null;
   if (row.kind === 'add') return { rowKey: row.key, pos: 'before', list: row.list, index: row.index };
   if (row.kind === 'variant') {
     const open = !collapsed.has(row.key);

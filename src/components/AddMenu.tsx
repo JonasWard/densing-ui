@@ -118,7 +118,7 @@ export const AddMenu = ({
           : { top: 0, left: 0, visibility: 'hidden' }
       }
     >
-      {FIELD_TYPES.map((t) => (
+      {FIELD_TYPES.filter((t) => !t.deprecated).map((t) => (
         <button key={t.type} type="button" role="menuitem" onClick={() => onPick(t.type)}>
           <TypeChip type={t.type} />
           <span className="add-menu-label">{t.label}</span>
