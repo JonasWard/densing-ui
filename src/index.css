@@ -368,21 +368,6 @@ select.bare {
   display: grid;
   gap: 0.5rem;
 }
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(320px, 1fr) minmax(320px, 420px);
-  gap: 0.75rem;
-  padding: 0 1rem 1rem;
-  align-items: start;
-  flex: 1;
-}
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.75rem;
-  min-width: 0;
-}
 .panel-head {
   display: flex;
   align-items: center;
@@ -394,43 +379,212 @@ select.bare {
   flex: 1;
   min-width: 0;
 }
-.side-panel,
-.tree-panel,
-.inspector {
-  position: sticky;
-  top: 0.75rem;
-  max-height: calc(100vh - 1.5rem);
+
+/* --- desktop: header, bits area and panels fill the window, each scrolls on its own --- */
+.app.desktop {
+  height: 100vh;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.app.desktop .bits-area {
   overflow: auto;
+  max-height: 30vh;
+  min-height: 0;
+}
+.app.desktop .bits-area.sized {
+  max-height: none;
+}
+.app.desktop .bits-area .ribbon-wrap {
+  margin-bottom: 0;
+}
+.app.desktop .ribbon {
+  max-height: none;
+  overflow: visible;
+}
+.bits-separator {
+  height: 10px;
+  margin: 0 1rem;
+  cursor: row-resize;
+  position: relative;
+  touch-action: none;
+}
+.bits-separator::after,
+.pane-separator::after {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.1s;
+}
+.bits-separator::after {
+  left: 40%;
+  right: 40%;
+  top: 4px;
+  height: 3px;
+  background: var(--border-strong);
+}
+.pane-separator::after {
+  top: 40%;
+  bottom: 40%;
+  left: 2px;
+  width: 3px;
+  background: var(--border-strong);
+}
+.bits-separator:hover::after,
+.bits-separator:focus-visible::after,
+.pane-separator:hover::after,
+.pane-separator:focus-visible::after {
+  background: var(--accent);
+  left: 0;
+  right: 0;
+}
+.pane-separator:hover::after,
+.pane-separator:focus-visible::after {
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  right: auto;
+}
+.bits-separator:focus-visible,
+.pane-separator:focus-visible {
+  outline: none;
+}
+.panes {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  padding: 0 1rem 0.75rem;
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  min-height: 42px;
+  flex-wrap: wrap;
+}
+.pane-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.pane-hide {
+  font-size: 1.1rem;
+}
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.75rem;
+}
+.pane-separator {
+  flex: 0 0 8px;
+  cursor: col-resize;
+  position: relative;
+  touch-action: none;
+}
+.view-toggles button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
-@media (max-width: 1180px) {
-  .workspace {
-    grid-template-columns: minmax(240px, 320px) 1fr;
-  }
-  .side-panel {
-    grid-column: 1 / -1;
-    position: static;
-    max-height: none;
-  }
+/* --- mobile: the header stays on top, everything else folds --- */
+.app.mobile {
+  min-height: 100vh;
+  padding-bottom: 1rem;
 }
-@media (max-width: 720px) {
-  .toolbar,
-  .workspace {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-  .workspace {
-    grid-template-columns: 1fr;
-  }
-  .side-panel,
-  .tree-panel,
-  .inspector {
-    position: static;
-    max-height: none;
-  }
-  .doc-name {
-    max-width: none;
-  }
+.app.mobile .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--panel);
+}
+.app.mobile .toolbar {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.app.mobile .doc-name {
+  max-width: none;
+}
+.fold {
+  margin: 0.6rem 16px 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.fold-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  flex-wrap: wrap;
+}
+.fold-toggle,
+.section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  background: none;
+  padding: 0.2rem 0.25rem;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+}
+.fold-toggle {
+  flex: 1;
+  min-height: 36px;
+}
+.fold-toggle:hover,
+.section-toggle:hover {
+  background: var(--panel-2);
+}
+.fold-body {
+  border-top: 1px solid var(--border);
+  padding: 0.75rem;
+  min-width: 0;
+}
+.app.mobile .fold-body .ribbon-wrap {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.chev-glyph {
+  width: 1rem;
+  color: var(--muted);
+  flex: none;
+}
+.fold-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.fold-block-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: -0.25rem;
+}
+.fold-summary {
+  margin-left: 0.25rem;
+}
+.data-label .chev {
+  margin-left: -0.2rem;
 }
 
 /* --- ribbon --- */
@@ -1171,4 +1325,34 @@ select.bare {
 .code.wrap {
   white-space: pre-wrap;
   word-break: break-all;
+}
+.section-row.first {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+/* mobile header: one row for the document, one scrolling row of actions */
+.app.mobile .doc-controls {
+  flex-wrap: nowrap;
+  min-width: 0;
+  flex-basis: 100%;
+}
+.app.mobile .doc-controls select.input {
+  max-width: 45%;
+}
+.app.mobile .doc-name {
+  flex: 1;
+  min-width: 0;
+}
+.app.mobile .toolbar-actions {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+  padding-bottom: 2px;
+}
+.app.mobile .fold-body .ribbon-head h2 {
+  display: none;
+}
+.app.mobile .toolbar-actions > * {
+  flex: none;
 }

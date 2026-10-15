@@ -28,6 +28,18 @@ import {
 import { getAt, pathKey } from './paths';
 import { decodeLink, encodeLink } from './share';
 import {
+  canHide,
+  DEFAULT_LAYOUT,
+  equalize,
+  MIN_SHARE,
+  parseLayout,
+  resize,
+  togglePanel,
+  visiblePanels,
+  visibleSizes,
+  type Layout
+} from './layout';
+import {
   canonicalTemplateOrder,
   convertPointers,
   countPointers,
@@ -455,5 +467,49 @@ describe('links', () => {
     const next = reducer(state, { type: 'openShared', name: 'Pose', schema, data });
     expect(next.docs).toHaveLength(1);
     expect(next.docs[0].data).toEqual(data);
+  });
+});
+
+describe('panel layout', () => {
+  const sum = (l: Layout) => Object.values(visibleSizes(l)).reduce((s, x) => s + (x ?? 0), 0);
+
+  it('resizing keeps both sides at or above the minimum and the total at 1', () => {
+    let l = resize(DEFAULT_LAYOUT, 'structure', 'inspector', 0.9);
+    expect(visibleSizes(l).inspector).toBeCloseTo(MIN_SHARE);
+    expect(sum(l)).toBeCloseTo(1);
+    l = resize(l, 'structure', 'inspector', -5);
+    expect(visibleSizes(l).structure).toBeCloseTo(MIN_SHARE);
+    expect(visibleSizes(l).side).toBeCloseTo(visibleSizes(DEFAULT_LAYOUT).side!);
+    expect(sum(l)).toBeCloseTo(1);
+  });
+
+  it('never hides the last panel, and showing a panel restores its share', () => {
+    let l = togglePanel(DEFAULT_LAYOUT, 'inspector');
+    expect(visiblePanels(l)).toEqual(['structure', 'side']);
+    expect(sum(l)).toBeCloseTo(1);
+    l = togglePanel(l, 'structure');
+    expect(visiblePanels(l)).toEqual(['side']);
+    expect(canHide(l, 'side')).toBe(false);
+    expect(togglePanel(l, 'side')).toBe(l);
+    l = togglePanel(togglePanel(l, 'structure'), 'inspector');
+    expect(visibleSizes(l)).toEqual(visibleSizes(DEFAULT_LAYOUT));
+  });
+
+  it('resizing with a hidden panel leaves the hidden share alone', () => {
+    const hidden = togglePanel(DEFAULT_LAYOUT, 'inspector');
+    const l = resize(hidden, 'structure', 'side', 0.1);
+    expect(l.sizes.inspector).toBe(DEFAULT_LAYOUT.sizes.inspector);
+    expect(sum(l)).toBeCloseTo(1);
+    expect(visibleSizes(equalize(l, 'structure', 'side'))).toEqual({ structure: 0.5, side: 0.5 });
+  });
+
+  it('falls back to the default for a corrupt or impossible saved layout', () => {
+    expect(parseLayout('{not json')).toBe(DEFAULT_LAYOUT);
+    expect(parseLayout(JSON.stringify({ sizes: { structure: -1, inspector: 1, side: 1 } }))).toBe(DEFAULT_LAYOUT);
+    expect(parseLayout(null)).toBe(DEFAULT_LAYOUT);
+    const allHidden = parseLayout(JSON.stringify({ ...DEFAULT_LAYOUT, hidden: ['structure', 'inspector', 'side'] }));
+    expect(allHidden.hidden).toEqual([]);
+    const saved = { ...DEFAULT_LAYOUT, hidden: ['inspector'], bitsHeight: 240, closedSections: ['bits'] };
+    expect(parseLayout(JSON.stringify(saved))).toEqual(saved);
   });
 });

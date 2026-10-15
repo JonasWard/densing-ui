@@ -6,6 +6,9 @@ import { getDefaultData } from 'densing';
 import { useEditor } from '../editor';
 import { useEncoding } from '../encoding';
 import { DataForm } from './DataForm';
+import { Fold } from './Fold';
+import { compoundPaths } from '../model/data';
+import { useCollapse } from '../ui-state';
 import { CopyButton, Segmented } from './ui';
 
 const BASES: { value: BaseChoice; label: string; title: string }[] = [
@@ -35,51 +38,99 @@ export const Playground = () => {
 
   return (
     <div className="playground">
-      <div className="encoded-box">
-        <div className="inline between">
-          <Segmented small value={doc.base} options={BASES} onChange={(base) => dispatch({ type: 'setBase', base })} />
-          <span className="inline">
-            {encoded && <CopyButton text={encoded} />}
+      <Fold id="try-section:encoded" title="Encoded">
+        <div className="encoded-box">
+          <div className="inline between">
+            <Segmented
+              small
+              value={doc.base}
+              options={BASES}
+              onChange={(base) => dispatch({ type: 'setBase', base })}
+            />
+            <span className="inline">
+              {encoded && <CopyButton text={encoded} />}
+              <button
+                type="button"
+                className={`btn small ${showQr ? 'on' : ''}`}
+                onClick={() => setShowQr(!showQr)}
+                disabled={!encoded}
+              >
+                QR
+              </button>
+            </span>
+          </div>
+          <output className="encoded mono">
+            {error ? <span className="muted">{error}</span> : encoded || <span className="muted">(empty)</span>}
+          </output>
+          {showQr && encoded && (
+            <div className="qr">
+              <QRCodeSVG value={encoded} size={168} marginSize={2} />
+            </div>
+          )}
+          <input
+            className="input mono"
+            placeholder="Paste an encoded string to decode it"
+            value={paste}
+            onChange={(e) => decode(e.target.value)}
+            aria-label="Decode"
+          />
+          {decodeError && <p className="field-error">{decodeError}</p>}
+        </div>
+      </Fold>
+      <Fold
+        id="try-section:data"
+        title="Preview data"
+        actions={
+          analysis.schema && (
             <button
               type="button"
-              className={`btn small ${showQr ? 'on' : ''}`}
-              onClick={() => setShowQr(!showQr)}
-              disabled={!encoded}
+              className="btn small"
+              onClick={() => dispatch({ type: 'setData', data: getDefaultData(analysis.schema!) })}
             >
-              QR
+              Reset to defaults
             </button>
-          </span>
-        </div>
-        <output className="encoded mono">
-          {error ? <span className="muted">{error}</span> : encoded || <span className="muted">(empty)</span>}
-        </output>
-        {showQr && encoded && (
-          <div className="qr">
-            <QRCodeSVG value={encoded} size={168} marginSize={2} />
-          </div>
-        )}
-        <input
-          className="input mono"
-          placeholder="Paste an encoded string to decode it"
-          value={paste}
-          onChange={(e) => decode(e.target.value)}
-          aria-label="Decode"
-        />
-        {decodeError && <p className="field-error">{decodeError}</p>}
-      </div>
-      <div className="inline between">
-        <h3>Preview data</h3>
-        {analysis.schema && (
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => dispatch({ type: 'setData', data: getDefaultData(analysis.schema!) })}
-          >
-            Reset to defaults
-          </button>
-        )}
-      </div>
-      <DataForm />
+          )
+        }
+      >
+        <DataForm />
+      </Fold>
     </div>
+  );
+};
+
+/** Panel-head buttons for Try it: fold every nested value, or open everything */
+export const TryActions = () => {
+  const { doc, analysis } = useEditor();
+  const fold = useCollapse();
+  return (
+    <>
+      <button
+        type="button"
+        className="btn small"
+        title="Fold every nested value; the sections stay open"
+        disabled={!analysis.schema}
+        onClick={() => {
+          fold.clear('try-section:');
+          fold.clear('data:');
+          if (analysis.schema)
+            fold.setMany(
+              compoundPaths(analysis.schema, doc.data, analysis.byName).map((p) => `data:${p}`),
+              true
+            );
+        }}
+      >
+        Collapse all
+      </button>
+      <button
+        type="button"
+        className="btn small"
+        onClick={() => {
+          fold.clear('data:');
+          fold.clear('try-section:');
+        }}
+      >
+        Expand all
+      </button>
+    </>
   );
 };

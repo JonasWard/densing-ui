@@ -25,11 +25,12 @@ import {
 } from '../model/ops';
 import { pathKey, samePath, type NodePath } from '../model/paths';
 import { useEditor } from '../editor';
+import { useCollapse } from '../ui-state';
 import { addTemplate, deleteNode, templateUses } from '../model/templates';
 import { isTemplateRoot } from '../model/paths';
 import { addDefinition, definitionsOf, presetNames, usesOf } from '../model/definitions';
 import { AddMenu } from './AddMenu';
-import { buildRows, dropTargetFor, type DropTarget, type Row } from './tree-rows';
+import { buildRows, dropTargetFor, foldableKeys, type DropTarget, type Row } from './tree-rows';
 import { TypeChip } from './ui';
 
 const BASE_NAMES: Record<FieldType, string> = {
@@ -49,7 +50,12 @@ const BASE_NAMES: Record<FieldType, string> = {
 
 export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }) => {
   const { doc, dispatch, state, analysis, hover, setHover } = useEditor();
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const fold = useCollapse();
+  // this tree's folded rows, from the shared collapse state (`tree:<row key>`)
+  const collapsed = useMemo(
+    () => new Set([...fold.collapsed].filter((k) => k.startsWith('tree:')).map((k) => k.slice(5))),
+    [fold.collapsed]
+  );
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [dragging, setDragging] = useState<Row | null>(null);
   const [drop, setDrop] = useState<DropTarget | null>(null);
@@ -61,13 +67,7 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  const toggle = (key: string) =>
-    setCollapsed((c) => {
-      const n = new Set(c);
-      if (n.has(key)) n.delete(key);
-      else n.add(key);
-      return n;
-    });
+  const toggle = (key: string) => fold.toggle(`tree:${key}`);
 
   const addField = (list: NodePath, index: number, type: FieldType) => {
     const taken = allNames(doc.schema);
@@ -156,15 +156,7 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
   };
 
   return (
-    <div className="panel tree-panel">
-      <div className="panel-head">
-        <h2>Structure</h2>
-        <span className="muted small">
-          {analysis.total
-            ? `${formatBits(analysis.total)} bits`
-            : `${analysis.errors.size + analysis.rootErrors.length} issue(s)`}
-        </span>
-      </div>
+    <div className="tree-panel">
       <DefinitionsSection />
       <DndContext
         sensors={sensors}
@@ -181,11 +173,7 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
             const r = moveField(doc.schema, dragging.path, t.list, t.index);
             if (r) {
               dispatch({ type: 'editSchema', schema: r.schema, select: r.path });
-              setCollapsed((c) => {
-                const n = new Set(c);
-                n.delete(pathKey(t.list));
-                return n;
-              });
+              fold.setMany([`tree:${pathKey(t.list)}`], false);
             }
           }
           setDragging(null);
@@ -321,13 +309,23 @@ const TreeRow = ({
 
   if (row.kind === 'section') {
     return (
-      <div ref={setRef} className="tree-row section-row">
-        <span className="form-label">{row.label}</span>
-        {row.count === 0 && <span className="muted small">none yet</span>}
-        <span className="row-spacer" />
-        <button type="button" className="add-btn" onClick={onAddTemplate}>
-          + Template
+      <div ref={setRef} className={`tree-row section-row ${row.key === 'fields#' ? 'first' : ''}`}>
+        <button
+          type="button"
+          className="section-toggle"
+          aria-expanded={!collapsed}
+          onClick={(e) => (e.stopPropagation(), onToggle())}
+        >
+          <span className="chev-glyph">{collapsed ? '▸' : '▾'}</span>
+          <span className="form-label">{row.label}</span>
+          <span className="muted small">{row.count === 0 ? 'none yet' : row.count}</span>
         </button>
+        <span className="row-spacer" />
+        {row.key === 'templates#' && (
+          <button type="button" className="add-btn" onClick={onAddTemplate}>
+            + Template
+          </button>
+        )}
       </div>
     );
   }
@@ -418,12 +416,23 @@ const TreeRow = ({
 /** Numeric definitions live beside the fields: shared ranges with presets, chosen once per payload */
 const DefinitionsSection = () => {
   const { doc, state, dispatch, analysis, hover, setHover } = useEditor();
+  const fold = useCollapse();
   const definitions = definitionsOf(doc.schema);
   const selectedKey = state.selected ? pathKey(state.selected) : null;
+  const closed = fold.isCollapsed('tree:definitions#');
   return (
     <div className="definitions" onMouseLeave={() => setHover({})}>
       <div className="definitions-head">
-        <span className="form-label">Shared numbers</span>
+        <button
+          type="button"
+          className="section-toggle"
+          aria-expanded={!closed}
+          onClick={() => fold.toggle('tree:definitions#')}
+        >
+          <span className="chev-glyph">{closed ? '▸' : '▾'}</span>
+          <span className="form-label">Shared numbers</span>
+          <span className="muted small">{definitions.length === 0 ? 'none yet' : definitions.length}</span>
+        </button>
         <button
           type="button"
           className="add-btn"
@@ -435,40 +444,74 @@ const DefinitionsSection = () => {
           + Definition
         </button>
       </div>
-      {definitions.length === 0 && (
+      {!closed && definitions.length === 0 && (
         <p className="muted small definitions-empty">
           A definition is a numeric range with presets (e.g. mm or m), used by any number of “shared number” fields.
         </p>
       )}
-      {definitions.map((d, i) => {
-        const key = pathKey(['definitions', i]);
-        const uses = usesOf(doc.schema, d.name).length;
-        return (
-          <div
-            key={i}
-            className={`tree-row field-row def-row ${selectedKey === key ? 'selected' : ''} ${hover.nodeKey === key ? 'hovered' : ''} ${
-              analysis.errors.has(key) ? 'has-error' : ''
-            }`}
-            onClick={() => dispatch({ type: 'select', path: ['definitions', i] })}
-            onMouseEnter={() => setHover({ nodeKey: key })}
-          >
-            <span className="type-chip t-definition">def</span>
-            <span className="row-name">{d.name || <em className="muted">unnamed</em>}</span>
-            <span className="muted small">
-              {presetNames(d).length} preset{presetNames(d).length === 1 ? '' : 's'} · {uses} use{uses === 1 ? '' : 's'}
-            </span>
-            <span className="row-spacer" />
-            {analysis.errors.has(key) && (
-              <span className="error-dot" title={analysis.errors.get(key)!.join('\n')}>
-                !
+      {!closed &&
+        definitions.map((d, i) => {
+          const key = pathKey(['definitions', i]);
+          const uses = usesOf(doc.schema, d.name).length;
+          return (
+            <div
+              key={i}
+              className={`tree-row field-row def-row ${selectedKey === key ? 'selected' : ''} ${hover.nodeKey === key ? 'hovered' : ''} ${
+                analysis.errors.has(key) ? 'has-error' : ''
+              }`}
+              onClick={() => dispatch({ type: 'select', path: ['definitions', i] })}
+              onMouseEnter={() => setHover({ nodeKey: key })}
+            >
+              <span className="type-chip t-definition">def</span>
+              <span className="row-name">{d.name || <em className="muted">unnamed</em>}</span>
+              <span className="muted small">
+                {presetNames(d).length} preset{presetNames(d).length === 1 ? '' : 's'} · {uses} use
+                {uses === 1 ? '' : 's'}
               </span>
-            )}
-            <span className="bits-badge" title="bits in the payload header to choose the preset">
-              {formatBits(analysis.ranges.get(key))}
-            </span>
-          </div>
-        );
-      })}
+              <span className="row-spacer" />
+              {analysis.errors.has(key) && (
+                <span className="error-dot" title={analysis.errors.get(key)!.join('\n')}>
+                  !
+                </span>
+              )}
+              <span className="bits-badge" title="bits in the payload header to choose the preset">
+                {formatBits(analysis.ranges.get(key))}
+              </span>
+            </div>
+          );
+        })}
     </div>
+  );
+};
+
+/** Panel-head buttons for the Structure panel: fold every container, or open everything */
+export const StructureActions = () => {
+  const { doc, analysis } = useEditor();
+  const fold = useCollapse();
+  return (
+    <>
+      <span className="muted small">
+        {analysis.total
+          ? `${formatBits(analysis.total)} bits`
+          : `${analysis.errors.size + analysis.rootErrors.length} issue(s)`}
+      </span>
+      <button
+        type="button"
+        className="btn small"
+        title="Fold every container; the sections stay open"
+        onClick={() => {
+          fold.clear('tree:');
+          fold.setMany(
+            foldableKeys(doc.schema).map((k) => `tree:${k}`),
+            true
+          );
+        }}
+      >
+        Collapse all
+      </button>
+      <button type="button" className="btn small" onClick={() => fold.clear('tree:')}>
+        Expand all
+      </button>
+    </>
   );
 };

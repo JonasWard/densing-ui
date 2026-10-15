@@ -4,7 +4,7 @@ import { useEditor } from '../editor';
 import { parseImport } from '../model/import';
 import { CopyButton } from './ui';
 
-export const Toolbar = () => {
+export const Toolbar = ({ view }: { view?: React.ReactNode } = {}) => {
   const { state, doc, dispatch, link } = useEditor();
   const [importing, setImporting] = useState(false);
   const [text, setText] = useState('');
@@ -52,6 +52,7 @@ export const Toolbar = () => {
         />
       </div>
       <div className="toolbar-actions">
+        {view}
         <button type="button" className="btn" onClick={() => dispatch({ type: 'newDoc' })}>
           New
         </button>
