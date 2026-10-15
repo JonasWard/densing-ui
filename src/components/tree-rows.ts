@@ -65,12 +65,19 @@ export const buildRows = (schema: DenseSchema, collapsed: Set<string>): Row[] =>
         break;
     }
   };
-  list(schema.fields, ['fields'], 0);
+  rows.push({ kind: 'section', key: 'fields#', label: 'Fields', count: schema.fields.length, depth: 0 });
+  if (!collapsed.has('fields#')) list(schema.fields, ['fields'], 0);
   const templates = schema.templates ?? [];
   rows.push({ kind: 'section', key: 'templates#', label: 'Templates', count: templates.length, depth: 0 });
   // template roots sit in the root templates list; their position is the index references use
-  templates.forEach((t, i) => field(t, ['templates', i], 0, ['templates'], i));
+  if (!collapsed.has('templates#')) templates.forEach((t, i) => field(t, ['templates', i], 0, ['templates'], i));
   return rows;
+};
+
+/** Every row that can fold: containers, union variant groups (in the fields and the templates) */
+export const foldableKeys = (schema: DenseSchema): string[] => {
+  const all = buildRows(schema, new Set());
+  return all.filter((r) => (r.kind === 'field' && r.hasChildren) || r.kind === 'variant').map((r) => r.key);
 };
 
 export type DropTarget = { rowKey: string; pos: 'before' | 'after' | 'into'; list: NodePath; index: number };

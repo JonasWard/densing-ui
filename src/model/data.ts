@@ -143,3 +143,40 @@ export const reconcile = (schema: DenseSchema, data: any, byName: Map<string, No
   const fields = schema.fields.map((f) => [f.name, f.name in data ? visit(f, data[f.name], 0) : fresh(f)]);
   return Object.fromEntries(presets ? [[PRESETS_KEY, presets], ...fields] : fields);
 };
+
+/**
+ * Data paths of every nested value (object, array, array item, union, optional, and references or
+ * pointers to one of those) in the data, in the grammar the form and the ribbon use.
+ */
+export const compoundPaths = (schema: DenseSchema, data: any, byName: Map<string, NodePath>): string[] => {
+  const resolve = resolver(schema, byName);
+  const out: string[] = [];
+  const visit = (f: DenseField, v: any, path: string, depth: number) => {
+    if (depth > 64) return;
+    const shape = f.type === 'reference' ? schema.templates?.[f.ref] : f.type === 'pointer' ? resolve(f.targetName) : f;
+    if (!shape) return;
+    switch (shape.type) {
+      case 'object':
+        out.push(path);
+        shape.fields.forEach((c) => visit(c, v?.[c.name], `${path}.${c.name}`, depth + 1));
+        break;
+      case 'array':
+        out.push(path);
+        (Array.isArray(v) ? v : []).forEach((x, i) => visit(shape.items, x, `${path}[${i}]`, depth + 1));
+        break;
+      case 'union': {
+        out.push(path);
+        const tag = v?.[shape.discriminator.name];
+        (shape.variants[tag] ?? []).forEach((c) => visit(c, v?.[c.name], `${path}.${c.name}`, depth + 1));
+        break;
+      }
+      case 'optional':
+        out.push(path);
+        if (v !== null && v !== undefined) visit(shape.field, v, path, depth + 1);
+        break;
+    }
+  };
+  const root = isObj(data) ? data : {};
+  schema.fields.forEach((f) => visit(f, root[f.name], f.name, 0));
+  return [...new Set(out)];
+};

@@ -11,6 +11,8 @@ import {
 } from '../model/definitions';
 import { getField, pathKey, type NodePath } from '../model/paths';
 import { useEditor } from '../editor';
+import { useCollapse } from '../ui-state';
+import { Fold } from './Fold';
 import { NumberInput, Segmented, Toggle, TypeChip } from './ui';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -24,7 +26,7 @@ interface Ctx {
 }
 
 export const DataForm = () => {
-  const { doc, analysis, dispatch, setHover } = useEditor();
+  const { doc, analysis, dispatch, hover, setHover } = useEditor();
   const schema = analysis.schema;
   const errors = useMemo(() => {
     const m = new Map<string, string>();
@@ -35,7 +37,17 @@ export const DataForm = () => {
   const data = (doc.data ?? {}) as Record<string, any>;
   const ctx: Ctx = { schema, byName: analysis.byName, errors, presets: data[PRESETS_KEY], depth: 0 };
   return (
-    <div className="data-form" onMouseLeave={() => setHover({})}>
+    <div
+      className="data-form"
+      onMouseLeave={() => setHover({})}
+      // one handler for all rows: the innermost row under the pointer is the value being pointed at
+      onMouseOver={(e) => {
+        const row = (e.target as HTMLElement).closest<HTMLElement>('.data-row[data-path]');
+        if (!row) return;
+        const { path, node } = row.dataset;
+        if (path !== hover.dataPath || node !== hover.nodeKey) setHover({ dataPath: path, nodeKey: node });
+      }}
+    >
       <PresetPickers
         data={data}
         onChange={(presets) =>
@@ -69,32 +81,66 @@ interface RowProps {
 }
 
 const FieldRow = (props: RowProps) => {
-  const { hover, setHover, dispatch } = useEditor();
+  const { hover, dispatch } = useEditor();
   const { field, node, dataPath, ctx, label } = props;
   const error = ctx.errors.get(dataPath);
-  const lit = hover.dataPath === dataPath;
   // a reference lays out like its template
   const shape = field.type === 'reference' ? (ctx.schema.templates?.[field.ref] ?? field) : field;
+  // this exact value, or (for a union) its tag bits
+  const lit =
+    hover.dataPath === dataPath ||
+    (shape.type === 'union' && hover.dataPath === `${dataPath}.${shape.discriminator.name}`);
   const compound = ['object', 'array', 'union', 'optional', 'pointer'].includes(shape.type);
+  const fold = useCollapse();
+  const foldId = `data:${dataPath}`;
+  const closed = compound && fold.isCollapsed(foldId);
   return (
     <div
       className={`data-row ${compound ? 'compound' : ''} ${lit ? 'lit' : ''} ${error ? 'has-error' : ''}`}
-      onMouseEnter={(e) => {
-        e.stopPropagation();
-        setHover({ dataPath, nodeKey: pathKey(node) });
-      }}
+      data-path={dataPath}
+      data-node={pathKey(node)}
       onFocus={() => dispatch({ type: 'select', path: node })}
     >
       <div className="data-label">
+        {compound && (
+          <button
+            type="button"
+            className="chev"
+            aria-expanded={!closed}
+            aria-label={`${closed ? 'Expand' : 'Collapse'} ${label ?? field.name}`}
+            onClick={() => fold.toggle(foldId)}
+          >
+            {closed ? '▸' : '▾'}
+          </button>
+        )}
         <TypeChip type={field.type} />
         <span>{label ?? field.name}</span>
+        {closed && <span className="muted small fold-summary">{summary(shape, props.value)}</span>}
       </div>
       <div className="data-control">
-        <Control {...props} />
+        {!closed && <Control {...props} />}
         {error && <span className="field-error">{error}</span>}
       </div>
     </div>
   );
+};
+
+/** What a folded row shows instead of its controls */
+const summary = (shape: DenseField, value: any): string => {
+  switch (shape.type) {
+    case 'object':
+      return `${shape.fields.length} field${shape.fields.length === 1 ? '' : 's'}`;
+    case 'array': {
+      const n = Array.isArray(value) ? value.length : 0;
+      return `${n} item${n === 1 ? '' : 's'}`;
+    }
+    case 'union':
+      return String(value?.[shape.discriminator.name] ?? '');
+    case 'optional':
+      return value === null || value === undefined ? 'absent' : 'present';
+    default:
+      return '…';
+  }
 };
 
 const Control = ({ field, node, dataPath, value, ctx, onChange }: RowProps) => {
@@ -362,12 +408,12 @@ const PresetPickers = ({
   data: Record<string, any>;
   onChange: (presets: Record<string, string>) => void;
 }) => {
-  const { analysis, hover, setHover, dispatch } = useEditor();
+  const { analysis, hover, dispatch } = useEditor();
   const definitions = analysis.schema ? definitionsOf(analysis.schema) : [];
   if (!definitions.length) return null;
   const current = Object.fromEntries(definitions.map((d) => [d.name, activePresetName(d, data[PRESETS_KEY])]));
   return (
-    <div className="preset-pickers">
+    <Fold id="try-section:presets" title="Presets" className="preset-pickers">
       {definitions.map((d, i) => {
         const dataPath = `${PRESETS_KEY}.${d.name}`;
         const options = presetNames(d).map((n) => ({ value: n, label: n }));
@@ -375,7 +421,8 @@ const PresetPickers = ({
           <div
             key={d.name}
             className={`data-row ${hover.dataPath === dataPath ? 'lit' : ''}`}
-            onMouseEnter={() => setHover({ dataPath, nodeKey: pathKey(['definitions', i]) })}
+            data-path={dataPath}
+            data-node={pathKey(['definitions', i])}
             onFocus={() => dispatch({ type: 'select', path: ['definitions', i] })}
           >
             <div className="data-label">
@@ -405,6 +452,6 @@ const PresetPickers = ({
           </div>
         );
       })}
-    </div>
+    </Fold>
   );
 };

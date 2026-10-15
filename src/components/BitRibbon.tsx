@@ -42,10 +42,13 @@ export const BitRibbon = () => {
   const selectedKey = state.selected ? pathKey(state.selected) : undefined;
   // a segment belongs to its own node, and to the references and definition it was reached through
   const belongs = (s: Segment, key: string) => coversPath(key, s.nodeKey) || s.alsoKeys.some((k) => coversPath(key, k));
+  // a hovered value (a bit, a form row) lights that value only; a hovered schema node (a tree row,
+  // a legend chip) lights every value of it
   const lit = (s: Segment | undefined) =>
     !!s &&
-    ((hover.nodeKey !== undefined && belongs(s, hover.nodeKey)) ||
-      (hover.dataPath !== undefined && coversPath(hover.dataPath, s.dataPath)));
+    (hover.dataPath !== undefined
+      ? coversPath(hover.dataPath, s.dataPath)
+      : hover.nodeKey !== undefined && belongs(s, hover.nodeKey));
   const anyHover = hover.nodeKey !== undefined || hover.dataPath !== undefined;
   const hovered = segments.find(lit);
 

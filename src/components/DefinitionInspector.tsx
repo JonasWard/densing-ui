@@ -53,7 +53,7 @@ export const DefinitionInspector = ({ index }: { index: number }) => {
   const widths = names.map((n) => safeBits(d.presets[n]));
 
   return (
-    <div className="panel inspector">
+    <div className="inspector">
       <div className="panel-head">
         <span className="type-chip t-definition">def</span>
         <h2 className="truncate">{d.name || 'unnamed'}</h2>

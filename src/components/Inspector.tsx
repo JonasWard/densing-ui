@@ -47,7 +47,7 @@ const SchemaOverview = () => {
   const { doc, analysis } = useEditor();
   const t = analysis.total;
   return (
-    <div className="panel inspector">
+    <div className="inspector">
       <div className="panel-head">
         <h2>Schema</h2>
       </div>
@@ -128,7 +128,7 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
     dispatch({ type: 'editSchema', schema: updateField(doc.schema, path, wrapField(doc.schema, field, kind)) });
 
   return (
-    <div className="panel inspector">
+    <div className="inspector">
       <div className="panel-head">
         <TypeChip type={field.type} />
         <h2 className="truncate">{field.name || 'unnamed'}</h2>
