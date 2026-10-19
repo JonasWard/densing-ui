@@ -1,6 +1,6 @@
 # densing builder
 
-A visual schema builder for [densing](https://github.com/JonasWard/densing) (0.4.4): build a schema as a tree and see what every field costs, bit by bit.
+A visual schema builder for [densing](https://github.com/JonasWard/densing) (0.4.6): build a schema as a tree and see what every field costs, bit by bit.
 
 ## What it does
 

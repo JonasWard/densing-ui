@@ -274,6 +274,18 @@ describe('numeric definitions', () => {
     expect([...analyze(removed).errors.keys()]).toEqual(['fields[0]', 'fields[1]', 'fields[2]']);
   });
 
+  it('renaming a definition used only inside a template updates the template', () => {
+    const schema: DenseSchema = {
+      definitions: [{ name: 'coord', presets: { cm: { min: -100, max: 100 } } }],
+      templates: [{ type: 'reference_numeric', name: 'x', ref: 'coord' }],
+      fields: [{ type: 'reference', name: 'a', ref: 0 }]
+    };
+    expect(usesOf(schema, 'coord')).toEqual([['templates', 0]]);
+    const renamed = updateDefinition(schema, 0, { ...schema.definitions![0], name: 'pos' });
+    expect(renamed.templates![0]).toMatchObject({ ref: 'pos' });
+    expect(analyze(renamed).schema).not.toBeNull();
+  });
+
   it('flags a bad preset on the definition', () => {
     const d = box.schema.definitions![0];
     const bad = updateDefinition(box.schema, 0, { ...d, presets: { ...d.presets, mm: { min: 10, max: 1 } } });
