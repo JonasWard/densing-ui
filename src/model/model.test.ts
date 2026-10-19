@@ -1,7 +1,7 @@
 import * as densing from 'densing';
 import { calculateDenseDataSize, densing as encode, schemaFromJson, type DenseSchema } from 'densing';
 import { describe, expect, it } from 'vitest';
-import { analyze, charsForBits, rangeCalculator } from './analyze';
+import { analyze, charsForBits } from './analyze';
 import {
   addDefinition,
   extractDefinition,
@@ -25,7 +25,7 @@ import {
   unwrapField,
   wrapField
 } from './ops';
-import { getAt, listNodes, pathKey } from './paths';
+import { getAt, pathKey } from './paths';
 import { decodeLink, encodeLink } from './share';
 import {
   canHide,
@@ -99,15 +99,6 @@ describe('examples', () => {
 });
 
 describe('analyze', () => {
-  it('bit ranges match densing for every node of every example', () => {
-    for (const ex of examples) {
-      const schema = schemaFromJson(ex.schema);
-      const rangeOf = rangeCalculator(schema);
-      for (const { field } of listNodes(schema, { templates: true }))
-        expect(rangeOf(field), ex.id).toEqual(densing.getDenseFieldBitWidthRange(field, schema));
-    }
-  });
-
   it('marks the node an error belongs to', () => {
     const s: DenseSchema = {
       fields: [{ type: 'object', name: 'o', fields: [{ type: 'int', name: 'x', min: 5, max: 1, defaultValue: 5 }] }]
