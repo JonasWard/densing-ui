@@ -7,30 +7,23 @@ import {
   type ValidationError
 } from 'densing';
 import { activePresetName, definitionsOf, findDefinition, PRESETS_KEY, presetAsField } from './definitions';
-import type { NodePath } from './paths';
+import { defaultVariantOf, variantNames } from './ops';
+import { variantFields, variantTemplate } from './templates';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-type Resolver = (name: string) => DenseField | undefined;
-
-const resolver =
-  (schema: DenseSchema, byName: Map<string, NodePath>): Resolver =>
-  (name) => {
-    const p = byName.get(name);
-    return p ? (p.reduce((n: any, s) => n[s], schema) as DenseField) : undefined;
-  };
-
 /** Default value for one field (densing's `getDefaultData` only does whole schemas) */
-export const defaultFor = (
-  field: DenseField,
-  schema: DenseSchema,
-  byName: Map<string, NodePath>,
-  presets?: unknown
-): any => {
-  const resolve = resolver(schema, byName);
+export const defaultFor = (field: DenseField, schema: DenseSchema, presets?: unknown): any => {
   const smallest = (f: Extract<DenseField, { type: 'union' }>) => {
-    const min = (key: string) => f.variants[key].reduce((s, v) => s + getDenseFieldBitWidthRange(v, schema).min, 0);
-    return f.discriminator.options.reduce((best, k) => (min(k) < min(best) ? k : best), f.discriminator.defaultValue);
+    const min = (key: string) => {
+      const t = variantTemplate(schema, f, key);
+      try {
+        return t ? getDenseFieldBitWidthRange(t, schema).min : Infinity;
+      } catch {
+        return Infinity;
+      }
+    };
+    return variantNames(f).reduce((best, k) => (min(k) < min(best) ? k : best), defaultVariantOf(f));
   };
   const visit = (f: DenseField, expanding: Set<DenseField>, minimal: boolean): any => {
     const inner = new Set(expanding).add(f);
@@ -48,10 +41,14 @@ export const defaultFor = (
       case 'object':
         return Object.fromEntries(f.fields.map((c) => [c.name, visit(c, inner, minimal)]));
       case 'union': {
-        const tag = minimal ? smallest(f) : f.discriminator.defaultValue;
+        const tag = minimal ? smallest(f) : defaultVariantOf(f);
+        // a variant that leads back to a template being expanded takes its smallest values, like a reference
+        const t = variantTemplate(schema, f, tag);
+        const min = minimal || (!!t && expanding.has(t));
+        const withT = t ? new Set(inner).add(t) : inner;
         return Object.fromEntries([
-          [f.discriminator.name, tag],
-          ...f.variants[tag].map((c) => [c.name, visit(c, inner, minimal)])
+          [f.discriminator, tag],
+          ...variantFields(schema, f, tag).map((c) => [c.name, visit(c, withT, min)])
         ]);
       }
       case 'reference_numeric': {
@@ -60,10 +57,6 @@ export const defaultFor = (
       }
       case 'reference': {
         const target = schema.templates?.[f.ref];
-        return target ? visit(target, inner, minimal || expanding.has(target)) : null;
-      }
-      case 'pointer': {
-        const target = resolve(f.targetName);
         return target ? visit(target, inner, minimal || expanding.has(target)) : null;
       }
     }
@@ -77,15 +70,14 @@ const isObj = (v: unknown): v is Record<string, any> => typeof v === 'object' &&
  * Fit existing preview data to an edited schema: keep every value that is still valid, replace the rest
  * with defaults. Keeps the preview stable while the schema changes under it.
  */
-export const reconcile = (schema: DenseSchema, data: any, byName: Map<string, NodePath>): any => {
+export const reconcile = (schema: DenseSchema, data: any): any => {
   if (!isObj(data)) return getDefaultData(schema);
-  const resolve = resolver(schema, byName);
   // the active presets come first: every reference_numeric value is checked against them
   const definitions = definitionsOf(schema);
   const presets = definitions.length
     ? Object.fromEntries(definitions.map((d) => [d.name, activePresetName(d, data[PRESETS_KEY])]))
     : undefined;
-  const fresh = (f: DenseField) => defaultFor(f, schema, byName, presets);
+  const fresh = (f: DenseField) => defaultFor(f, schema, presets);
   const visit = (f: DenseField, v: any, depth: number): any => {
     if (depth > 64) return fresh(f);
     switch (f.type) {
@@ -123,19 +115,15 @@ export const reconcile = (schema: DenseSchema, data: any, byName: Map<string, No
         );
       }
       case 'union': {
-        const tag = isObj(v) ? v[f.discriminator.name] : undefined;
-        if (!f.discriminator.options.includes(tag)) return fresh(f);
+        const tag = isObj(v) ? v[f.discriminator] : undefined;
+        if (typeof tag !== 'string' || !(tag in f.variants)) return fresh(f);
         return Object.fromEntries([
-          [f.discriminator.name, tag],
-          ...f.variants[tag].map((c) => [c.name, c.name in v ? visit(c, v[c.name], depth + 1) : fresh(c)])
+          [f.discriminator, tag],
+          ...variantFields(schema, f, tag).map((c) => [c.name, c.name in v ? visit(c, v[c.name], depth + 1) : fresh(c)])
         ]);
       }
       case 'reference': {
         const target = schema.templates?.[f.ref];
-        return target ? visit(target, v, depth + 1) : null;
-      }
-      case 'pointer': {
-        const target = resolve(f.targetName);
         return target ? visit(target, v, depth + 1) : null;
       }
     }
@@ -145,15 +133,14 @@ export const reconcile = (schema: DenseSchema, data: any, byName: Map<string, No
 };
 
 /**
- * Data paths of every nested value (object, array, array item, union, optional, and references or
- * pointers to one of those) in the data, in the grammar the form and the ribbon use.
+ * Data paths of every nested value (object, array, array item, union, optional, and references to one of
+ * those) in the data, in the grammar the form and the ribbon use.
  */
-export const compoundPaths = (schema: DenseSchema, data: any, byName: Map<string, NodePath>): string[] => {
-  const resolve = resolver(schema, byName);
+export const compoundPaths = (schema: DenseSchema, data: any): string[] => {
   const out: string[] = [];
   const visit = (f: DenseField, v: any, path: string, depth: number) => {
     if (depth > 64) return;
-    const shape = f.type === 'reference' ? schema.templates?.[f.ref] : f.type === 'pointer' ? resolve(f.targetName) : f;
+    const shape = f.type === 'reference' ? schema.templates?.[f.ref] : f;
     if (!shape) return;
     switch (shape.type) {
       case 'object':
@@ -166,8 +153,9 @@ export const compoundPaths = (schema: DenseSchema, data: any, byName: Map<string
         break;
       case 'union': {
         out.push(path);
-        const tag = v?.[shape.discriminator.name];
-        (shape.variants[tag] ?? []).forEach((c) => visit(c, v?.[c.name], `${path}.${c.name}`, depth + 1));
+        const tag = v?.[shape.discriminator];
+        if (typeof tag === 'string' && tag in shape.variants)
+          variantFields(schema, shape, tag).forEach((c) => visit(c, v?.[c.name], `${path}.${c.name}`, depth + 1));
         break;
       }
       case 'optional':

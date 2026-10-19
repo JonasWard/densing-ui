@@ -10,7 +10,6 @@ export const TYPE_GLYPH: Record<FieldType, string> = {
   enum_array: '[a]',
   optional: '?',
   union: '|',
-  pointer: '↗',
   reference_numeric: '#→',
   reference: '&'
 };

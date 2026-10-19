@@ -29,13 +29,16 @@ export interface Example {
 const plain = (s: { fields: unknown; definitions?: unknown; templates?: unknown }): DenseSchema =>
   JSON.parse(JSON.stringify(s));
 
-// templates are defined once and only used through references
+// templates are defined once and only used through references; `add` and `multiply` share one shape
+const binary: Template = template(
+  object(
+    'binary',
+    reference('left', () => expr),
+    reference('right', () => expr)
+  )
+);
 const expr: Template = template(
-  union('expr', enumeration('type', ['number', 'add', 'multiply']), {
-    number: [int('value', 0, 1000)],
-    add: [reference('left', () => expr), reference('right', () => expr)],
-    multiply: [reference('left', () => expr), reference('right', () => expr)]
-  })
+  union('expr', 'type', { number: [int('value', 0, 1000)], add: binary, multiply: binary })
 );
 
 const vec3 = template(object('vec3', fixed('x', -10, 10, 0.01), fixed('y', -10, 10, 0.01), fixed('z', -10, 10, 0.01)));
@@ -92,7 +95,7 @@ export const examples: Example[] = [
     description: 'A tagged union: each variant has its own fields',
     schema: plain(
       schema(
-        union('action', enumeration('type', ['start', 'stop', 'pause']), {
+        union('action', 'type', {
           start: [int('delay', 0, 60)],
           stop: [bool('force')],
           pause: [int('duration', 0, 3600)]
@@ -153,7 +156,7 @@ export const examples: Example[] = [
   {
     id: 'expression',
     name: 'Expression Tree',
-    description: 'A recursive template: (5 + 3) × 2',
+    description: 'A recursive template: (5 + 3) × 2, add and multiply share one shape',
     schema: plain(schema(reference('expr', expr))),
     data: {
       expr: {

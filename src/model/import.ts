@@ -1,6 +1,10 @@
 import type { DenseSchema } from 'densing';
+import { upgradeSchema } from './migrate';
 
-/** Accepts `{ fields, definitions?, templates? }`, `{ name, fields, ... }` (the old builder's export) or a bare field list */
+/**
+ * Accepts `{ fields, definitions?, templates? }`, `{ name, fields, ... }` (the old builder's export) or a bare
+ * field list; schemas from densing 0.4 are converted
+ */
 export const parseImport = (text: string, fallbackName: string): { name: string; schema: DenseSchema } => {
   const json = JSON.parse(text);
   const fields = Array.isArray(json) ? json : json?.fields;
@@ -8,5 +12,5 @@ export const parseImport = (text: string, fallbackName: string): { name: string;
   const schema: DenseSchema = { fields };
   if (Array.isArray(json?.definitions)) schema.definitions = json.definitions;
   if (Array.isArray(json?.templates)) schema.templates = json.templates;
-  return { name: typeof json?.name === 'string' ? json.name : fallbackName, schema };
+  return { name: typeof json?.name === 'string' ? json.name : fallbackName, schema: upgradeSchema(schema) };
 };

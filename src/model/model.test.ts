@@ -1,5 +1,5 @@
 import * as densing from 'densing';
-import { calculateDenseDataSize, densing as encode, schemaFromJson, type DenseSchema } from 'densing';
+import { calculateDenseDataSize, densing as encode, schemaFromJson, type DenseField, type DenseSchema } from 'densing';
 import { describe, expect, it } from 'vitest';
 import { analyze, charsForBits } from './analyze';
 import {
@@ -17,11 +17,16 @@ import { examples } from './examples';
 import {
   addVariant,
   changeType,
+  defaultVariantOf,
   duplicateField,
   fieldTemplate,
+  insertField,
   moveField,
-  removeVariant,
   renameVariant,
+  setDefaultVariant,
+  setVariantTemplate,
+  updateField,
+  variantNames,
   unwrapField,
   wrapField
 } from './ops';
@@ -41,12 +46,14 @@ import {
 } from './layout';
 import {
   canonicalTemplateOrder,
-  convertPointers,
-  countPointers,
+  addVariantTemplate,
   inlineReference,
   makeTemplate,
   removeTemplate,
-  templateUses
+  removeVariantAt,
+  setVariantTemplateAt,
+  templateUses,
+  withVariantTemplates
 } from './templates';
 import { layoutBits } from './ribbon';
 
@@ -74,7 +81,7 @@ describe('examples', () => {
 
     it(`${ex.id}: ribbon matches the encoder bit for bit`, () => {
       const a = analyze(ex.schema);
-      const segs = layoutBits(a.schema!, ex.data, a.byName);
+      const segs = layoutBits(a.schema!, ex.data);
       const total = segs.reduce((s, x) => s + x.bits, 0);
       expect(total).toBe(calculateDenseDataSize(a.schema!, ex.data).totalBits);
       expect(encode(a.schema!, ex.data, 'binary').length).toBe(total);
@@ -84,7 +91,7 @@ describe('examples', () => {
 
     it(`${ex.id}: reconcile keeps valid data untouched`, () => {
       const a = analyze(ex.schema);
-      expect(reconcile(a.schema!, ex.data, a.byName)).toEqual(ex.data);
+      expect(reconcile(a.schema!, ex.data)).toEqual(ex.data);
     });
   }
 
@@ -92,7 +99,7 @@ describe('examples', () => {
     const ex = examples[0];
     const a = analyze(ex.schema);
     const bits = encode(a.schema!, ex.data, 'binary');
-    const [deviceId] = layoutBits(a.schema!, ex.data, a.byName);
+    const [deviceId] = layoutBits(a.schema!, ex.data);
     expect(bits.slice(deviceId.start, deviceId.start + deviceId.bits)).toBe((42).toString(2).padStart(10, '0'));
     expect(encode(a.schema!, ex.data)).toBe('Cqnu');
   });
@@ -108,9 +115,9 @@ describe('analyze', () => {
     expect(a.schema).toBeNull();
   });
 
-  it('maps pointer errors to the pointer node', () => {
-    const s: DenseSchema = { fields: [{ type: 'pointer', name: 'p', targetName: 'nope' }] };
-    expect([...analyze(s).errors.keys()]).toEqual(['fields[0]']);
+  it('flags a union variant without a template on the union', () => {
+    const s: DenseSchema = { fields: [{ type: 'union', name: 'u', discriminator: 'type', variants: { a: -1 } }] };
+    expect(analyze(s).errors.get('fields[0]')).toEqual(['choose a template for variant "a"']);
   });
 
   it('flags duplicate names on the later field', () => {
@@ -177,20 +184,71 @@ describe('ops', () => {
       min: -3,
       max: 9
     });
-    expect(changeType(s.fields[2], 'union', s)).toMatchObject({ variants: { a: [], b: [], c: [] } });
+    // the variants get their templates when the union is placed (withVariantTemplates)
+    expect(changeType(s.fields[2], 'union', s)).toMatchObject({
+      discriminator: 'type',
+      variants: { a: -1, b: -1, c: -1 }
+    });
   });
 
-  it('keeps union variants and discriminator in sync', () => {
-    let u = fieldTemplate('union', 'u');
-    if (u.type !== 'union') throw new Error();
-    u = addVariant(u, 'c');
-    u = { ...u, variants: { ...u.variants, c: [fieldTemplate('bool', 'flag')] } };
-    u = renameVariant(u, 'c', 'z');
-    expect(u.discriminator.options).toEqual(['a', 'b', 'z']);
-    expect(u.variants.z[0].name).toBe('flag');
-    u = removeVariant(u, 'a');
-    expect(u.discriminator).toMatchObject({ options: ['b', 'z'], defaultValue: 'b' });
-    expect(analyze({ fields: [u] }).errors.size).toBe(0);
+  it('edits union variants as links to templates', () => {
+    const made = withVariantTemplates({ fields: [] }, fieldTemplate('union', 'u'));
+    let s: DenseSchema = { ...made.schema, fields: [made.field] };
+    const at = (): Extract<DenseField, { type: 'union' }> => s.fields[0] as Extract<DenseField, { type: 'union' }>;
+    expect(at().variants).toEqual({ a: 0, b: 1 });
+    expect(s.templates?.map((t) => t.type)).toEqual(['object', 'object']);
+
+    // a new variant with a new template, renamed and made the default; the tag key renamed
+    const added = addVariantTemplate(s, 'c');
+    s = updateField(added.schema, ['fields', 0], addVariant(at(), 'c', added.index));
+    s = updateField(s, ['fields', 0], setDefaultVariant(renameVariant(at(), 'c', 'z'), 'z'));
+    s = updateField(s, ['fields', 0], { ...at(), discriminator: 'kind' });
+    expect(variantNames(at())).toEqual(['a', 'b', 'z']);
+    expect(defaultVariantOf(at())).toBe('z');
+
+    // b uses a's template; b's own one is removed, and z's index follows
+    s = updateField(s, ['fields', 0], setVariantTemplate(at(), 'b', 0));
+    s = removeTemplate(s, 1);
+    s = insertField(s, ['templates', 0, 'fields'], 0, fieldTemplate('bool', 'flag'));
+    expect(at().variants).toEqual({ a: 0, b: 0, z: 1 });
+    expect(templateUses(s, 0)).toEqual([
+      ['fields', 0, 'variants', 'a'],
+      ['fields', 0, 'variants', 'b']
+    ]);
+    let a = analyze(s);
+    expect([...a.errors.keys(), ...a.rootErrors]).toEqual([]);
+    const data = { u: { kind: 'b', flag: true } };
+    expect(densing.undensing(a.schema!, encode(a.schema!, data))).toEqual(data);
+    expect(defaultFor(at(), s)).toEqual({ kind: 'z' });
+
+    // removing variants down to one; a template goes when nothing uses it any more
+    s = removeVariantAt(s, ['fields', 0], 'z');
+    expect(s.templates).toHaveLength(1);
+    s = removeVariantAt(s, ['fields', 0], 'a');
+    expect(at()).toEqual({ type: 'union', name: 'u', discriminator: 'kind', variants: { b: 0 } });
+    a = analyze(s);
+    expect([...a.errors.keys(), ...a.rootErrors]).toEqual([]);
+    expect(densing.undensing(a.schema!, encode(a.schema!, data))).toEqual(data);
+  });
+});
+
+describe('union variant templates', () => {
+  it('re-pointing a variant drops its old template when nothing else uses it', () => {
+    const made = withVariantTemplates({ fields: [] }, fieldTemplate('union', 'u'));
+    let s: DenseSchema = { ...made.schema, fields: [made.field] };
+    // b takes a's template: b's own one goes, nothing else moves
+    let r = setVariantTemplateAt(s, ['fields', 0], 'b', 0);
+    s = r.schema;
+    expect(s.fields[0]).toMatchObject({ variants: { a: 0, b: 0 } });
+    expect(s.templates).toHaveLength(1);
+    expect(r.select).toBeUndefined();
+    // a gets a new template, which is selected; the shared one stays for b
+    r = setVariantTemplateAt(s, ['fields', 0], 'a', 'new');
+    s = r.schema;
+    expect(s.fields[0]).toMatchObject({ variants: { a: 1, b: 0 } });
+    expect(r.select).toEqual(['templates', 1]);
+    const a = analyze(s);
+    expect([...a.errors.keys(), ...a.rootErrors]).toEqual([]);
   });
 });
 
@@ -202,18 +260,17 @@ describe('data', () => {
         { type: 'array', name: 'xs', minLength: 2, maxLength: 3, items: { type: 'bool', name: 'b' } }
       ]
     });
-    const a = analyze(s);
-    expect(reconcile(s, { n: 50, xs: [true, true, true, true], gone: 1 }, a.byName)).toEqual({
+    expect(reconcile(s, { n: 50, xs: [true, true, true, true], gone: 1 })).toEqual({
       n: 0,
       xs: [true, true, true]
     });
-    expect(reconcile(s, { n: 4, xs: [] }, a.byName)).toEqual({ n: 4, xs: [false, false] });
+    expect(reconcile(s, { n: 4, xs: [] })).toEqual({ n: 4, xs: [false, false] });
   });
 
   it('defaults terminate for recursive fields', () => {
     const ex = examples.find((e) => e.id === 'expression')!;
     const a = analyze(ex.schema);
-    expect(defaultFor(a.schema!.fields[0], a.schema!, a.byName)).toEqual({ type: 'number', value: 0 });
+    expect(defaultFor(a.schema!.fields[0], a.schema!)).toEqual({ type: 'number', value: 0 });
   });
 });
 
@@ -235,7 +292,7 @@ describe('numeric definitions', () => {
 
   it('ribbon starts with the preset selector and matches the encoder', () => {
     const data = { $presets: { length: 'm' }, width: 12.5, height: 0.4, depth: 80 };
-    const segs = layoutBits(a.schema!, data, a.byName);
+    const segs = layoutBits(a.schema!, data);
     expect(segs[0]).toMatchObject({
       kind: 'preset',
       start: 0,
@@ -248,10 +305,10 @@ describe('numeric definitions', () => {
   });
 
   it('reconcile adds $presets and resets values the new preset cannot hold', () => {
-    expect(reconcile(a.schema!, { width: 120, height: 40, depth: 800 }, a.byName)).toEqual(box.data);
-    const switched = reconcile(a.schema!, { ...(box.data as object), $presets: { length: 'm' } }, a.byName);
+    expect(reconcile(a.schema!, { width: 120, height: 40, depth: 800 })).toEqual(box.data);
+    const switched = reconcile(a.schema!, { ...(box.data as object), $presets: { length: 'm' } });
     expect(switched).toEqual({ $presets: { length: 'm' }, width: 0, height: 40, depth: 0 });
-    expect(reconcile(a.schema!, { ...(box.data as object), $presets: { length: 'nope' } }, a.byName).$presets).toEqual({
+    expect(reconcile(a.schema!, { ...(box.data as object), $presets: { length: 'nope' } }).$presets).toEqual({
       length: 'mm'
     });
   });
@@ -338,19 +395,18 @@ describe('renames keep the preview preset', () => {
   });
 });
 
-describe('templates (densing 0.4.4)', () => {
+describe('templates', () => {
   const ex = (id: string) => examples.find((e) => e.id === id)!;
   const enc = (schema: DenseSchema, data: unknown) => encode(schemaFromJson(schema), data as object);
 
   it('encode like the densing README', () => {
     expect(enc(ex('pose').schema, ex('pose').data)).toBe('iZLCij6H0O2');
     expect(enc(ex('expression').schema, ex('expression').data)).toBe('kAUAMAI');
-    expect(countPointers(ex('expression').schema)).toBe(0);
   });
 
   it('ribbon walks references and tags their bits with the reference field', () => {
     const a = analyze(ex('pose').schema);
-    const segs = layoutBits(a.schema!, ex('pose').data, a.byName);
+    const segs = layoutBits(a.schema!, ex('pose').data);
     expect(segs).toHaveLength(6);
     expect(segs[0]).toMatchObject({
       nodeKey: 'templates[0].fields[0]',
@@ -364,7 +420,9 @@ describe('templates (densing 0.4.4)', () => {
     const code = schemaToCode(ex('expression').schema, 'Expression');
     expect(code).toContain("import type { Template } from 'densing';");
     expect(code).toContain('const expr: Template = template(');
-    expect(code).toContain("reference('left', () => expr)");
+    // union variants are templates; `binary` is a densing export, so the template gets another name
+    expect(code).toContain("union('expr', 'type', {\n  number: () => number,\n  add: () => binaryTemplate,");
+    expect(code).toContain("reference('left', expr)");
     expect(code).toContain("schema(\n  reference('expr', expr)\n)");
     // templates stored out of first-use order still generate the same schema
     const s: DenseSchema = {
@@ -390,9 +448,9 @@ describe('templates (densing 0.4.4)', () => {
     const back = inlineReference(made.schema, ['fields', 0]);
     expect(back.templates).toBeUndefined();
     expect(enc(back, net.data)).toBe(enc(net.schema, net.data));
-    // a recursive template stays while its own body still uses it
+    // a recursive template stays while the templates of its own variants still use it
     const inlinedExpr = inlineReference(ex('expression').schema, ['fields', 0]);
-    expect(inlinedExpr.templates).toHaveLength(1);
+    expect(inlinedExpr.templates?.map((t) => t.name)).toEqual(['expr', 'number', 'binary']);
     expect(enc(inlinedExpr, ex('expression').data)).toBe('kAUAMAI');
   });
 
@@ -432,24 +490,6 @@ describe('templates (densing 0.4.4)', () => {
     expect([...a.errors.keys()]).toEqual(['fields[2]']);
     expect(a.rootErrors).toEqual([]);
   });
-
-  it('converting pointers through the store keeps data and encoding', () => {
-    const ptr: DenseSchema = densing.schema(
-      densing.union('expr', densing.enumeration('type', ['number', 'add', 'multiply']), {
-        number: [densing.int('value', 0, 1000)],
-        add: [densing.pointer('left', 'expr'), densing.pointer('right', 'expr')],
-        multiply: [densing.pointer('left', 'expr'), densing.pointer('right', 'expr')]
-      })
-    ) as DenseSchema;
-    const data = ex('expression').data;
-    expect(analyze(ptr).pointerCount).toBe(4);
-    const doc = { id: 'd', name: 'Old', schema: JSON.parse(JSON.stringify(ptr)), data, base: 'base64url' as const };
-    const state: State = { docs: [doc], activeId: 'd', selected: null, past: [], future: [], lastEdit: null };
-    const next = reducer(state, { type: 'editSchema', schema: convertPointers(doc.schema) }).docs[0];
-    expect(countPointers(next.schema)).toBe(0);
-    expect(next.data).toEqual(data);
-    expect(enc(next.schema, next.data)).toBe('kAUAMAI');
-  });
 });
 
 describe('links', () => {
@@ -460,7 +500,7 @@ describe('links', () => {
       expect(decoded).toMatchObject({ ok: true, name: ex.name });
       if (!decoded?.ok) throw new Error('not decoded');
       expect(decoded.schema).toEqual(schema);
-      expect(decoded.data).toEqual(reconcile(schema, ex.data, analyze(schema).byName));
+      expect(decoded.data).toEqual(reconcile(schema, ex.data));
     });
   }
 

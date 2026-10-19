@@ -1,7 +1,8 @@
 import { calculateDenseFieldBitWidth, type DenseField, type DenseSchema } from 'densing';
 import { activePresetName, definitionsOf, PRESETS_KEY, selectorBits } from './definitions';
-import { bitsForStates } from './ops';
+import { bitsForStates, variantNames } from './ops';
 import { pathKey, type NodePath } from './paths';
+import { variantFields, variantObjectIndex } from './templates';
 
 export type SegmentKind = 'value' | 'presence' | 'length' | 'tag' | 'packed' | 'preset';
 
@@ -9,7 +10,7 @@ export interface Segment {
   start: number;
   bits: number;
   kind: SegmentKind;
-  /** schema node this segment belongs to (template and pointer bodies resolve to their own nodes) */
+  /** schema node this segment belongs to (template bodies and union variants resolve to their templates) */
   nodeKey: string;
   node: NodePath;
   /** data path in densing's grammar: `colors[1].r`, `expr.left.type` */
@@ -18,17 +19,14 @@ export interface Segment {
   /** the value as written, for tooltips */
   value: string;
   /**
-   * other nodes these bits belong to: the reference / pointer fields they were reached through, and
+   * other nodes these bits belong to: the reference fields and unions they were reached through, and
    * for shared numbers the definition they are encoded with (`definitions[0]`)
    */
   alsoKeys: string[];
 }
 
-/**
- * Lay out the bits `densing(schema, data)` writes, in the same order as the encoder.
- * `byName` resolves pointers the way densing does (first depth-first match over the fields).
- */
-export const layoutBits = (schema: DenseSchema, data: unknown, byName: Map<string, NodePath>): Segment[] => {
+/** Lay out the bits `densing(schema, data)` writes, in the same order as the encoder */
+export const layoutBits = (schema: DenseSchema, data: unknown): Segment[] => {
   const out: Segment[] = [];
   let cursor = 0;
   const push = (seg: Omit<Segment, 'start' | 'nodeKey'>) => {
@@ -107,16 +105,19 @@ export const layoutBits = (schema: DenseSchema, data: unknown, byName: Map<strin
         field.fields.forEach((f, i) => visit(f, [...node, 'fields', i], value?.[f.name], `${dataPath}.${f.name}`, via));
         break;
       case 'union': {
-        const tag = value?.[field.discriminator.name];
+        const tag = value?.[field.discriminator];
         emit(
-          bitsForStates(field.discriminator.options.length),
+          bitsForStates(variantNames(field).length),
           'tag',
-          `${field.name}.${field.discriminator.name}`,
+          `${field.name}.${field.discriminator}`,
           JSON.stringify(tag),
-          `${dataPath}.${field.discriminator.name}`
+          `${dataPath}.${field.discriminator}`
         );
-        (field.variants[tag] ?? []).forEach((f, i) =>
-          visit(f, [...node, 'variants', tag, i], value?.[f.name], `${dataPath}.${f.name}`, via)
+        if (typeof tag !== 'string' || !(tag in field.variants)) break;
+        // the variant's fields are drawn under its template, reached through this union
+        const t = variantObjectIndex(schema, field, tag);
+        variantFields(schema, field, tag).forEach((f, i) =>
+          visit(f, ['templates', t, 'fields', i], value?.[f.name], `${dataPath}.${f.name}`, [...via, pathKey(node)])
         );
         break;
       }
@@ -125,17 +126,9 @@ export const layoutBits = (schema: DenseSchema, data: unknown, byName: Map<strin
         if (target) visit(target, ['templates', field.ref], value, dataPath, [...via, pathKey(node)]);
         break;
       }
-      case 'pointer': {
-        const target = byName.get(field.targetName);
-        if (target) visit(resolve(schema, target), target, value, dataPath, [...via, pathKey(node)]);
-        break;
-      }
     }
   };
 
   schema.fields.forEach((f, i) => visit(f, ['fields', i], (data as Record<string, unknown>)?.[f.name], f.name, []));
   return out;
 };
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const resolve = (schema: DenseSchema, path: NodePath): DenseField => path.reduce((n: any, s) => n[s], schema);

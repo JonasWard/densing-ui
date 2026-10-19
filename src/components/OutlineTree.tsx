@@ -24,15 +24,17 @@ import {
   uniqueName,
   type FieldType
 } from '../model/ops';
-import { listNodes, pathKey, samePath, type NodePath } from '../model/paths';
+import { pathKey, samePath, type NodePath } from '../model/paths';
 import { useEditor, type Hover } from '../editor';
 import { useCollapse } from '../ui-state';
-import { addTemplate, deleteNode } from '../model/templates';
+import { addTemplate, deleteNode, templateUseCounts, withVariantTemplates } from '../model/templates';
 import { isTemplateRoot } from '../model/paths';
 import { addDefinition, definitionsOf, presetNames, usesOf } from '../model/definitions';
 import { AddMenu } from './AddMenu';
 import { buildRows, dropTargetFor, foldableKeys, type DropTarget, type Row } from './tree-rows';
 import { TypeChip } from './ui';
+
+const NO_TEMPLATE = ['choose a template for this variant'];
 
 const BASE_NAMES: Record<FieldType, string> = {
   bool: 'flag',
@@ -44,7 +46,6 @@ const BASE_NAMES: Record<FieldType, string> = {
   enum_array: 'tags',
   optional: 'maybe',
   union: 'choice',
-  pointer: 'ref',
   reference_numeric: 'size',
   reference: 'part'
 };
@@ -137,6 +138,8 @@ const TreeView = memo(function TreeView({
       if (!schema.templates?.length) schema = addTemplate(schema).schema;
       field = { ...field, ref: 0 };
     }
+    // a union's variants each get a new empty template
+    ({ schema, field } = withVariantTemplates(schema, field));
     dispatch({ type: 'editSchema', schema: insertField(schema, list, index, field), select: [...list, index] });
     setMenuFor(null);
     onRequestRename();
@@ -144,20 +147,15 @@ const TreeView = memo(function TreeView({
 
   const select = (path: NodePath | null) => dispatch({ type: 'select', path });
 
-  // uses per template, counted once per schema rather than once per row
-  const templateUseCounts = useMemo(() => {
-    const counts = new Map<number, number>();
-    for (const { field } of listNodes(docSchema, { templates: true }))
-      if (field.type === 'reference') counts.set(field.ref, (counts.get(field.ref) ?? 0) + 1);
-    return counts;
-  }, [docSchema]);
+  // uses per template (references and union variants), counted once per schema rather than once per row
+  const useCounts = useMemo(() => templateUseCounts(docSchema), [docSchema]);
 
   /** a short hint after the name: what a reference uses, how often a template is used */
   const rowNote = (row: Extract<Row, { kind: 'field' }>): string | undefined => {
     const f = row.field;
     if (f.type === 'reference') return `→ ${docSchema.templates?.[f.ref]?.name ?? '?'}`;
     if (isTemplateRoot(row.path)) {
-      const uses = templateUseCounts.get(row.index) ?? 0;
+      const uses = useCounts.get(row.index) ?? 0;
       return `${uses} use${uses === 1 ? '' : 's'}`;
     }
     return undefined;
@@ -170,7 +168,8 @@ const TreeView = memo(function TreeView({
       toggle,
       select: (row) => {
         if (row.kind === 'field') select(row.path);
-        if (row.kind === 'variant') select(row.union);
+        // a variant opens its template, where its fields are edited; without one, its union
+        if (row.kind === 'variant') select(docSchema.templates?.[row.ref] ? ['templates', row.ref] : row.union);
         treeRef.current?.focus();
       },
       hover: (row) => setHover(row.kind === 'field' ? { nodeKey: row.key } : {}),
@@ -294,10 +293,28 @@ const TreeView = memo(function TreeView({
             hovered={row.kind === 'field' && hover.nodeKey === row.key}
             collapsed={collapsed.has(row.key)}
             drop={drop?.rowKey === row.key ? drop.pos : null}
-            errors={row.kind === 'field' ? analysis.errors.get(row.key) : undefined}
-            bits={row.kind === 'field' ? formatBits(analysis.ranges.get(row.key)) : ''}
+            errors={
+              row.kind === 'field'
+                ? analysis.errors.get(row.key)
+                : row.kind === 'variant' && !docSchema.templates?.[row.ref]
+                  ? NO_TEMPLATE
+                  : undefined
+            }
+            bits={
+              row.kind === 'field'
+                ? formatBits(analysis.ranges.get(row.key))
+                : row.kind === 'variant' && docSchema.templates?.[row.ref]
+                  ? formatBits(analysis.ranges.get(pathKey(['templates', row.ref])))
+                  : ''
+            }
             menuOpen={menuFor === row.key}
-            note={row.kind === 'field' ? rowNote(row) : undefined}
+            note={
+              row.kind === 'field'
+                ? rowNote(row)
+                : row.kind === 'variant'
+                  ? `→ ${docSchema.templates?.[row.ref]?.name ?? 'no template'}`
+                  : undefined
+            }
             actions={actions}
           />
         ))}
@@ -411,24 +428,23 @@ const TreeRow = memo(function TreeRow({
       <div
         ref={setRef}
         data-row-key={row.key}
-        className={`tree-row variant-row ${dropClass} ${selected ? 'in-selected' : ''}`}
+        className={`tree-row variant-row ${selected ? 'in-selected' : ''} ${errors ? 'has-error' : ''}`}
         style={indent}
         onClick={onSelect}
+        title="Edit this variant's fields in its template"
       >
-        <button
-          type="button"
-          className="chev"
-          onClick={(e) => (e.stopPropagation(), onToggle())}
-          aria-label={collapsed ? 'Expand' : 'Collapse'}
-        >
-          {collapsed ? '▸' : '▾'}
-        </button>
+        <span className="chev" />
         <span className="variant-label">
           <span className="muted">when</span> {row.variant}
         </span>
-        <span className="muted small">
-          {row.count === 0 ? 'no fields' : `${row.count} field${row.count > 1 ? 's' : ''}`}
-        </span>
+        {note && <span className="muted small">{note}</span>}
+        <span className="row-spacer" />
+        {errors && (
+          <span className="error-dot" title={errors.join('\n')}>
+            !
+          </span>
+        )}
+        <span className="bits-badge">{bits}</span>
       </div>
     );
   }
@@ -471,8 +487,6 @@ const TreeRow = memo(function TreeRow({
       <TypeChip type={field.type} />
       <span className="row-name">{field.name || <em className="muted">unnamed</em>}</span>
       {row.slot && <span className="slot-tag">{row.slot}</span>}
-      {field.type === 'pointer' && <span className="muted small">→ {field.targetName || '?'}</span>}
-      {field.type === 'pointer' && <span className="deprecated-tag">deprecated</span>}
       {note && <span className="muted small">{note}</span>}
       {field.type === 'reference_numeric' && <span className="muted small">→ {field.ref || '?'}</span>}
       {field.type === 'array' && (

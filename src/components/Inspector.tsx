@@ -13,12 +13,14 @@ import {
   bitsForStates,
   canUnwrap,
   changeType,
+  defaultVariantOf,
   duplicateField,
   fixedSteps,
   normalizeDefault,
-  removeVariant,
   renameVariant,
+  setDefaultVariant,
   uniqueName,
+  variantNames,
   unwrapField,
   updateField,
   wrapField,
@@ -27,9 +29,16 @@ import {
 } from '../model/ops';
 import { extractDefinition } from '../model/definitions';
 import { getField, isTemplateRoot, parentListPath, pathKey, type NodePath } from '../model/paths';
-import { deleteNode, makeTemplate } from '../model/templates';
-import { PointerDeprecation, ReferenceEditor, TemplateUses } from './TemplateInspector';
-import { coversPath, useEditor } from '../editor';
+import {
+  addVariantTemplate,
+  deleteNode,
+  makeTemplate,
+  removeVariantAt,
+  setVariantTemplateAt,
+  withVariantTemplates
+} from '../model/templates';
+import { ReferenceEditor, TemplateUses } from './TemplateInspector';
+import { useEditor } from '../editor';
 import { DefinitionInspector, ReferenceNumericEditor } from './DefinitionInspector';
 import { Field, NumberInput, Stat, TextInput, Toggle, TypeChip } from './ui';
 
@@ -64,7 +73,6 @@ const SchemaOverview = () => {
           value={t ? formatBits({ min: charsForBits(t.min, 38), max: charsForBits(t.max, 38) }) : '?'}
         />
       </div>
-      <PointerDeprecation />
       {analysis.rootErrors.map((e) => (
         <p key={e} className="error-box">
           {e}
@@ -158,14 +166,13 @@ const FieldInspector = ({ path, field, renameNonce }: FieldInspectorProps) => {
           <select
             className="input"
             value={field.type}
-            onChange={(e) =>
-              dispatch({
-                type: 'editSchema',
-                schema: updateField(doc.schema, path, changeType(field, e.target.value as FieldType, doc.schema))
-              })
-            }
+            onChange={(e) => {
+              // a new union's variants each get a new empty template
+              const r = withVariantTemplates(doc.schema, changeType(field, e.target.value as FieldType, doc.schema));
+              dispatch({ type: 'editSchema', schema: updateField(r.schema, path, r.field) });
+            }}
           >
-            {FIELD_TYPES.filter((t) => !t.deprecated || t.type === field.type).map((t) => (
+            {FIELD_TYPES.map((t) => (
               <option key={t.type} value={t.type}>
                 {t.label}
               </option>
@@ -274,13 +281,6 @@ const TypeEditor = ({ field, set, path }: { field: DenseField; set: Setter; path
       return <ObjectEditor field={field} path={path} />;
     case 'union':
       return <UnionEditor field={field} set={set} path={path} />;
-    case 'pointer':
-      return (
-        <>
-          <PointerDeprecation />
-          <PointerEditor field={field} set={set} path={path} />
-        </>
-      );
     case 'reference':
       return <ReferenceEditor field={field} path={path} />;
     case 'reference_numeric':
@@ -611,128 +611,104 @@ const ObjectEditor = ({ field, path }: { field: Extract<DenseField, { type: 'obj
 );
 
 const UnionEditor = ({ field, set, path }: { field: UnionField; set: Setter; path: NodePath }) => {
-  const { analysis, doc } = useEditor();
-  const keys = field.discriminator.options;
+  const { analysis, doc, dispatch } = useEditor();
+  const keys = variantNames(field);
   const tagBits = bitsForStates(keys.length);
-  const variantBits = (k: string) =>
-    formatBits(
-      (field.variants[k] ?? []).reduce(
-        (acc, _, i) => {
-          const r = analysis.ranges.get(pathKey([...path, 'variants', k, i]));
-          return r ? { min: acc.min + r.min, max: acc.max + r.max } : acc;
-        },
-        { min: tagBits, max: tagBits }
-      )
-    );
+  const templates = doc.schema.templates ?? [];
+  const def = defaultVariantOf(field);
+  const variantBits = (k: string) => {
+    const r = analysis.ranges.get(pathKey(['templates', field.variants[k]]));
+    return formatBits(r ? { min: r.min + tagBits, max: r.max + tagBits } : undefined);
+  };
+  const edit = (schema: typeof doc.schema, select?: NodePath) =>
+    dispatch({ type: 'editSchema', schema, ...(select ? { select } : {}) });
+  const pickTemplate = (key: string, value: string) => {
+    const r = setVariantTemplateAt(doc.schema, path, key, value === '__new' ? 'new' : Number(value));
+    edit(r.schema, r.select);
+  };
+  const add = () => {
+    const key = uniqueName(new Set(keys), `variant${keys.length + 1}`);
+    const r = addVariantTemplate(doc.schema, key);
+    edit(updateField(r.schema, path, addVariant(field, key, r.index)));
+  };
   return (
     <>
       <div className="grid-2">
-        <Field label="Tag name" hint={`stored as data.${field.name}.${field.discriminator.name}`}>
-          <TextInput
-            value={field.discriminator.name}
-            onChange={(v) => set({ ...field, discriminator: { ...field.discriminator, name: v } }, 'tag')}
-          />
+        <Field label="Tag key" hint={`stored as data.${field.name}.${field.discriminator}`}>
+          <TextInput value={field.discriminator} onChange={(v) => set({ ...field, discriminator: v }, 'tag')} />
         </Field>
         <Field label="Tag">
           <span className="readout">{plural(tagBits, 'bit')}</span>
         </Field>
       </div>
-      <Field label="Variants" hint="Default variant is selected. Each variant's fields are edited in the structure.">
+      <Field
+        label="Variants"
+        hint="Default variant is selected. A variant's fields live in its template; variants may share one."
+      >
         <div className="options">
-          {keys.map((k, i) => (
-            <div key={i} className="option-row">
-              <input
-                type="radio"
-                name={`default-${pathKey(path)}`}
-                checked={field.discriminator.defaultValue === k}
-                onChange={() => set({ ...field, discriminator: { ...field.discriminator, defaultValue: k } })}
-                aria-label={`Default variant ${k}`}
-              />
-              <TextInput
-                value={k}
-                aria-label={`Variant ${i + 1}`}
-                onChange={(v) => v && set(renameVariant(field, k, v), `variant${i}`)}
-              />
-              <span className="bits-badge">{variantBits(k)}</span>
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label={`Remove ${k}`}
-                disabled={keys.length <= 2}
-                onClick={() => set(removeVariant(field, k))}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="btn small"
-            onClick={() =>
-              set(
-                addVariant(
-                  field,
-                  uniqueName(new Set([...keys, ...doc.schema.fields.map((f) => f.name)]), `variant${keys.length + 1}`)
-                )
-              )
-            }
-          >
+          {keys.map((k, i) => {
+            const ref = field.variants[k];
+            return (
+              <div key={i} className="option-row variant-option">
+                <input
+                  type="radio"
+                  name={`default-${pathKey(path)}`}
+                  checked={def === k}
+                  onChange={() => set(setDefaultVariant(field, k))}
+                  aria-label={`Default variant ${k}`}
+                />
+                <TextInput
+                  value={k}
+                  aria-label={`Variant ${i + 1}`}
+                  onChange={(v) => v && set(renameVariant(field, k, v), `variant${i}`)}
+                />
+                <select
+                  className="input"
+                  aria-label={`Template of ${k}`}
+                  value={templates[ref] ? String(ref) : ''}
+                  onChange={(e) => pickTemplate(k, e.target.value)}
+                >
+                  {!templates[ref] && <option value="">choose a template…</option>}
+                  {templates.map(
+                    (t, j) =>
+                      // a variant's template is an object (or a reference to one)
+                      (t.type === 'object' || t.type === 'reference' || j === ref) && (
+                        <option key={j} value={j}>
+                          {t.name}
+                          {t.type === 'object' ? '' : ` (${t.type})`}
+                        </option>
+                      )
+                  )}
+                  <option value="__new">+ New template…</option>
+                </select>
+                <span className="bits-badge">{variantBits(k)}</span>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Edit the template of ${k}`}
+                  title="Edit this variant's fields"
+                  disabled={!templates[ref]}
+                  onClick={() => dispatch({ type: 'select', path: ['templates', ref] })}
+                >
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Remove ${k}`}
+                  disabled={keys.length <= 1}
+                  onClick={() => edit(removeVariantAt(doc.schema, path, k))}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          <button type="button" className="btn small" onClick={add}>
             + Variant
           </button>
         </div>
       </Field>
-    </>
-  );
-};
-
-const PointerEditor = ({
-  field,
-  set,
-  path
-}: {
-  field: Extract<DenseField, { type: 'pointer' }>;
-  set: Setter;
-  path: NodePath;
-}) => {
-  const { analysis, doc, dispatch } = useEditor();
-  const self = pathKey(path);
-  const targets = [...analysis.byName.entries()].filter(
-    ([, p]) => pathKey(p) !== self && getField(doc.schema, p)?.type !== 'pointer'
-  );
-  const target = analysis.byName.get(field.targetName);
-  const recursive = !!target && coversPath(pathKey(target), self);
-  return (
-    <>
-      <Field
-        label="Points to"
-        hint="A pointer encodes like the field it names. Pointing at an ancestor makes the schema recursive."
-      >
-        <select
-          className="input"
-          value={field.targetName}
-          onChange={(e) => set({ ...field, targetName: e.target.value })}
-        >
-          <option value="">choose a field…</option>
-          {targets.map(([name, p]) => (
-            <option key={name} value={name}>
-              {name} ({getField(doc.schema, p)?.type})
-            </option>
-          ))}
-        </select>
-      </Field>
-      {target && (
-        <button type="button" className="child-link" onClick={() => dispatch({ type: 'select', path: target })}>
-          <span className="muted small">{recursive ? 'Recursive, into ancestor' : 'Target'}</span>
-          <span>{field.targetName}</span>
-          <span className="row-spacer" />
-          <span className="muted small mono">{pathKey(target)}</span>
-        </button>
-      )}
-      {recursive && (
-        <p className="muted small">
-          Recursive schemas have no upper size limit: each level costs its tag plus its own fields.
-        </p>
-      )}
     </>
   );
 };
