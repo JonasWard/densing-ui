@@ -1,3 +1,4 @@
+import * as densingExports from 'densing';
 import type { DenseField, DenseSchema, EnumField, NumericDefinition, NumericPreset } from 'densing';
 import { canonicalTemplateOrder } from './templates';
 
@@ -14,6 +15,9 @@ interface Ctx {
   names: string[];
   declaring: number;
 }
+
+/** A template that is not declared yet (itself, or a later one) is passed as a function */
+const templateArg = (ref: number, ctx: Ctx) => (ref < ctx.declaring ? ctx.names[ref] : `() => ${ctx.names[ref]}`);
 
 const fieldCode = (f: DenseField, indent: string, ctx: Ctx): string => {
   const next = indent + '  ';
@@ -37,28 +41,20 @@ const fieldCode = (f: DenseField, indent: string, ctx: Ctx): string => {
       return `optional(${str(f.name)}, ${sub(f.field)}${
         f.defaultValue !== undefined && f.defaultValue !== null ? `, ${lit(f.defaultValue)}` : ''
       })`;
-    case 'pointer':
-      return `pointer(${str(f.name)}, ${str(f.targetName)})`;
     case 'reference_numeric':
       return `referenceNumeric(${str(f.name)}, ${str(f.ref)})`;
-    case 'reference': {
-      const target = ctx.names[f.ref];
-      // a template that is not declared yet (itself, or a later one) is passed as a function
-      return `reference(${str(f.name)}, ${f.ref < ctx.declaring ? target : `() => ${target}`})`;
-    }
+    case 'reference':
+      return `reference(${str(f.name)}, ${templateArg(f.ref, ctx)})`;
     case 'object':
       if (!f.fields.length) return `object(${str(f.name)})`;
       return `object(\n${next}${[str(f.name), ...f.fields.map((c) => sub(c, next))].join(`,\n${next}`)}\n${indent})`;
     case 'union': {
-      const inner = next + '  ';
+      // every variant is a template, declared above like the others
       const variants = Object.entries(f.variants)
-        .map(([k, fs]) =>
-          fs.length
-            ? `${next}${key(k)}: [\n${inner}${fs.map((c) => sub(c, inner)).join(`,\n${inner}`)}\n${next}]`
-            : `${next}${key(k)}: []`
-        )
+        .map(([k, ref]) => `${next}${key(k)}: ${templateArg(ref, ctx)}`)
         .join(',\n');
-      return `union(${str(f.name)}, ${enumCall(f.discriminator)}, {\n${variants}\n${indent}})`;
+      const def = f.defaultVariant !== undefined ? `, ${str(f.defaultVariant)}` : '';
+      return `union(${str(f.name)}, ${str(f.discriminator)}, {\n${variants}\n${indent}}${def})`;
     }
   }
 };
@@ -73,7 +69,6 @@ const builders = (schema: DenseSchema) => {
     enum_array: 'enumArray',
     array: 'array',
     optional: 'optional',
-    pointer: 'pointer',
     reference_numeric: 'referenceNumeric',
     reference: 'reference',
     object: 'object',
@@ -81,11 +76,10 @@ const builders = (schema: DenseSchema) => {
   };
   const visit = (f: DenseField) => {
     used.add(names[f.type]);
-    if (f.type === 'enum_array' || f.type === 'union') used.add('enumeration');
+    if (f.type === 'enum_array') used.add('enumeration');
     if (f.type === 'object') f.fields.forEach(visit);
     if (f.type === 'array') visit(f.items);
     if (f.type === 'optional') visit(f.field);
-    if (f.type === 'union') Object.values(f.variants).flat().forEach(visit);
   };
   schema.fields.forEach(visit);
   if (schema.templates?.length) {
@@ -113,11 +107,13 @@ const definitionCode = (d: NumericDefinition) => {
   return `definition(${str(d.name)}, { ${presets} }${def})`;
 };
 
-const RESERVED = new Set(
-  'schema schemaWithDefinitions template reference definition bool int fixed enumeration enumArray array optional pointer referenceNumeric object union Template break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof let new null return super switch this throw true try typeof var void while with yield await'.split(
+// densing's own exports are reserved too, so generated code can import them next to the builders
+const RESERVED = new Set([
+  ...Object.keys(densingExports),
+  ...'schema schemaWithDefinitions template reference definition bool int fixed enumeration enumArray array optional referenceNumeric object union Template break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof let new null return super switch this throw true try typeof var void while with yield await'.split(
     ' '
   )
-);
+]);
 
 /** A valid, unused identifier for each template name (`vec3`, `my shape` → `myShape`) */
 const templateNames = (templates: DenseField[]) => {
@@ -146,7 +142,7 @@ const hasLazyRef = (f: DenseField, declaring: number): boolean => {
     case 'optional':
       return hasLazyRef(f.field, declaring);
     case 'union':
-      return Object.values(f.variants).some((fs) => fs.some((c) => hasLazyRef(c, declaring)));
+      return Object.values(f.variants).some((ref) => ref >= declaring);
     default:
       return false;
   }

@@ -9,7 +9,9 @@ import {
   presetAsField,
   presetNames
 } from '../model/definitions';
-import { getField, pathKey, type NodePath } from '../model/paths';
+import { variantNames } from '../model/ops';
+import { pathKey, type NodePath } from '../model/paths';
+import { variantFields, variantObjectIndex } from '../model/templates';
 import { useEditor } from '../editor';
 import { useCollapse } from '../ui-state';
 import { Fold } from './Fold';
@@ -19,7 +21,6 @@ import { NumberInput, Segmented, Toggle, TypeChip } from './ui';
 
 interface Ctx {
   schema: DenseSchema;
-  byName: Map<string, NodePath>;
   errors: Map<string, string>;
   presets: unknown;
   depth: number;
@@ -35,7 +36,7 @@ export const DataForm = () => {
   }, [schema, doc.data]);
   if (!schema) return <p className="muted small">The form appears once the schema is valid.</p>;
   const data = (doc.data ?? {}) as Record<string, any>;
-  const ctx: Ctx = { schema, byName: analysis.byName, errors, presets: data[PRESETS_KEY], depth: 0 };
+  const ctx: Ctx = { schema, errors, presets: data[PRESETS_KEY], depth: 0 };
   return (
     <div
       className="data-form"
@@ -52,7 +53,7 @@ export const DataForm = () => {
         data={data}
         onChange={(presets) =>
           // values the new preset cannot hold are reset, the rest stay
-          dispatch({ type: 'setData', data: reconcile(schema, { ...data, [PRESETS_KEY]: presets }, analysis.byName) })
+          dispatch({ type: 'setData', data: reconcile(schema, { ...data, [PRESETS_KEY]: presets }) })
         }
       />
       {schema.fields.map((f, i) => (
@@ -88,9 +89,8 @@ const FieldRow = (props: RowProps) => {
   const shape = field.type === 'reference' ? (ctx.schema.templates?.[field.ref] ?? field) : field;
   // this exact value, or (for a union) its tag bits
   const lit =
-    hover.dataPath === dataPath ||
-    (shape.type === 'union' && hover.dataPath === `${dataPath}.${shape.discriminator.name}`);
-  const compound = ['object', 'array', 'union', 'optional', 'pointer'].includes(shape.type);
+    hover.dataPath === dataPath || (shape.type === 'union' && hover.dataPath === `${dataPath}.${shape.discriminator}`);
+  const compound = ['object', 'array', 'union', 'optional'].includes(shape.type);
   const fold = useCollapse();
   const foldId = `data:${dataPath}`;
   const closed = compound && fold.isCollapsed(foldId);
@@ -135,7 +135,7 @@ const summary = (shape: DenseField, value: any): string => {
       return `${n} item${n === 1 ? '' : 's'}`;
     }
     case 'union':
-      return String(value?.[shape.discriminator.name] ?? '');
+      return String(value?.[shape.discriminator] ?? '');
     case 'optional':
       return value === null || value === undefined ? 'absent' : 'present';
     default:
@@ -144,7 +144,7 @@ const summary = (shape: DenseField, value: any): string => {
 };
 
 const Control = ({ field, node, dataPath, value, ctx, onChange }: RowProps) => {
-  const fresh = (f: DenseField) => defaultFor(f, ctx.schema, ctx.byName, ctx.presets);
+  const fresh = (f: DenseField) => defaultFor(f, ctx.schema, ctx.presets);
   const child = (f: DenseField, n: NodePath, p: string, v: any, set: (v: any) => void, label?: string) => (
     <FieldRow
       key={p}
@@ -312,34 +312,37 @@ const Control = ({ field, node, dataPath, value, ctx, onChange }: RowProps) => {
       );
     }
     case 'union': {
-      const tagName = field.discriminator.name;
+      const tagName = field.discriminator;
+      const keys = variantNames(field);
       const tag: string = value?.[tagName];
-      const variant = field.variants[tag] ?? [];
-      const switchTo = (t: string) =>
+      const known = typeof tag === 'string' && tag in field.variants;
+      // the variant's fields live in its template: the rows point at the template's nodes
+      const variant = known ? variantFields(ctx.schema, field, tag) : [];
+      const t = known ? variantObjectIndex(ctx.schema, field, tag) : -1;
+      const switchTo = (next: string) =>
         onChange(
           Object.fromEntries([
-            [tagName, t],
-            ...field.variants[t].map((f) => [f.name, value && f.name in value ? value[f.name] : fresh(f)])
+            [tagName, next],
+            ...variantFields(ctx.schema, field, next).map((f) => [
+              f.name,
+              value && f.name in value ? value[f.name] : fresh(f)
+            ])
           ])
         );
+      if (ctx.depth > 40) return <span className="muted">too deep to show</span>;
       return (
         <div className="nested">
-          {field.discriminator.options.length <= 4 ? (
-            <Segmented
-              small
-              value={tag}
-              options={field.discriminator.options.map((o) => ({ value: o, label: o }))}
-              onChange={switchTo}
-            />
+          {keys.length <= 4 ? (
+            <Segmented small value={tag} options={keys.map((o) => ({ value: o, label: o }))} onChange={switchTo} />
           ) : (
             <select className="input" value={tag} onChange={(e) => switchTo(e.target.value)}>
-              {field.discriminator.options.map((o) => (
+              {keys.map((o) => (
                 <option key={o}>{o}</option>
               ))}
             </select>
           )}
           {variant.map((f, i) =>
-            child(f, [...node, 'variants', tag, i], `${dataPath}.${f.name}`, value?.[f.name], (v) =>
+            child(f, ['templates', t, 'fields', i], `${dataPath}.${f.name}`, value?.[f.name], (v) =>
               onChange({ ...value, [f.name]: v })
             )
           )}
@@ -374,22 +377,6 @@ const Control = ({ field, node, dataPath, value, ctx, onChange }: RowProps) => {
         <Control
           field={{ ...tf, name: field.name }}
           node={['templates', field.ref]}
-          dataPath={dataPath}
-          value={value}
-          ctx={{ ...ctx, depth: ctx.depth + 1 }}
-          onChange={onChange}
-        />
-      );
-    }
-    case 'pointer': {
-      const target = ctx.byName.get(field.targetName);
-      const tf = target && getField(ctx.schema, target);
-      if (!target || !tf) return <span className="muted">unresolved</span>;
-      if (ctx.depth > 40) return <span className="muted">too deep to show</span>;
-      return (
-        <Control
-          field={{ ...tf, name: field.name }}
-          node={target}
           dataPath={dataPath}
           value={value}
           ctx={{ ...ctx, depth: ctx.depth + 1 }}

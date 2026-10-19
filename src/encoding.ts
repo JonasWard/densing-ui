@@ -17,7 +17,7 @@ export const useEncoding = () => {
     try {
       const encoded = densing(analysis.schema, doc.data, doc.base);
       const bits = densing(analysis.schema, doc.data, 'binary');
-      return { error: null, segments: layoutBits(analysis.schema, doc.data, analysis.byName), bits, encoded };
+      return { error: null, segments: layoutBits(analysis.schema, doc.data), bits, encoded };
     } catch (e) {
       return { error: e instanceof Error ? e.message : String(e), segments: [] as Segment[], bits: '', encoded: '' };
     }

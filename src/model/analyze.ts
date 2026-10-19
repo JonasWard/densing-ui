@@ -26,35 +26,34 @@ export interface Analysis {
   total: BitRange | null;
   /** bits the payload header spends on choosing presets (0 without definitions) */
   header: number;
-  /** number of (deprecated) pointer fields, in the fields and the templates */
-  pointerCount: number;
-  /** field name → node path, in densing's resolution order, for pointers */
-  byName: Map<string, NodePath>;
 }
 
 const placeholder = (name: string): DenseField => ({ type: 'bool', name, defaultValue: false });
 
-/** The field with its children replaced by placeholders, so only this node's own rules are checked */
-const shallow = (field: DenseField): DenseField => {
+/**
+ * The field with its children replaced by placeholders, so only this node's own rules are checked. A union's
+ * variants point at placeholder templates: whether its own templates fit is checked against the whole schema.
+ */
+const shallow = (field: DenseField): DenseSchema => {
+  if (field.type === 'union') {
+    const keys = Object.keys(field.variants ?? {});
+    return {
+      templates: keys.map((_, i) => ({ type: 'object', name: `__v${i}`, fields: [] })),
+      fields: [{ ...field, variants: Object.fromEntries(keys.map((k, i) => [k, i])) }]
+    };
+  }
+  return { fields: [shallowField(field)] };
+};
+
+const shallowField = (field: DenseField): DenseField => {
   switch (field.type) {
     case 'object':
       return { ...field, fields: field.fields.map((_, i) => placeholder(`__c${i}`)) };
-    case 'union':
-      return {
-        ...field,
-        variants: Object.fromEntries(
-          Object.entries(field.variants ?? {}).map(([k, fs]) => [
-            k,
-            (Array.isArray(fs) ? fs : []).map((_, i) => placeholder(`__c${i}`))
-          ])
-        )
-      };
     case 'array':
       return { ...field, items: placeholder('__item') };
     case 'optional':
       // the optional's default is checked against its inner field, keep that check out of the shallow pass
       return { ...field, field: placeholder('__inner'), defaultValue: undefined };
-    case 'pointer':
     case 'reference_numeric':
     case 'reference':
       // their targets are checked against the whole schema in step 3
@@ -93,8 +92,6 @@ const listsOf = (schema: DenseSchema): [NodePath, DenseField[]][] => {
   const lists: [NodePath, DenseField[]][] = [[['fields'], schema.fields]];
   for (const { path, field } of listNodes(schema, { templates: true })) {
     if (field.type === 'object') lists.push([[...path, 'fields'], field.fields]);
-    if (field.type === 'union')
-      for (const [k, fs] of Object.entries(field.variants)) lists.push([[...path, 'variants', k], fs]);
   }
   return lists;
 };
@@ -105,22 +102,21 @@ export const analyze = (schema: DenseSchema): Analysis => {
   const push = (key: string, message: string) => errors.set(key, [...(errors.get(key) ?? []), message]);
 
   const nodes = listNodes(schema, { templates: true });
-  // pointers resolve against the fields only: templates are not pointer targets
-  const byName = new Map<string, NodePath>();
-  for (const { path, field } of listNodes(schema)) if (!byName.has(field.name)) byName.set(field.name, path);
+  const isTemplate = (ref: unknown) =>
+    typeof ref === 'number' && Number.isInteger(ref) && ref >= 0 && ref < (schema.templates?.length ?? 0);
 
   // 1. every node on its own
   for (const { path, field } of nodes) {
     try {
-      schemaFromJson({ fields: [shallow(field)] });
+      schemaFromJson(shallow(field));
     } catch (e) {
       push(pathKey(path), stripPrefix(e instanceof Error ? e.message : String(e)));
     }
-    if (field.type === 'pointer' && typeof field.targetName !== 'string')
-      push(pathKey(path), '"targetName" must be a string');
     if (field.type === 'reference_numeric' && !field.ref) push(pathKey(path), 'choose a definition');
-    if (field.type === 'reference' && !(Number.isInteger(field.ref) && field.ref >= 0))
-      push(pathKey(path), 'choose a template');
+    if (field.type === 'reference' && !isTemplate(field.ref)) push(pathKey(path), 'choose a template');
+    if (field.type === 'union')
+      for (const [key, ref] of Object.entries(field.variants ?? {}))
+        if (!isTemplate(ref)) push(pathKey(path), `choose a template for variant "${key}"`);
   }
   // 1b. every numeric definition on its own
   definitionsOf(schema).forEach((d, i) => {
@@ -140,7 +136,7 @@ export const analyze = (schema: DenseSchema): Analysis => {
   }
   if (schema.fields.length === 0) rootErrors.push('add at least one field');
 
-  // 3. whole-schema rules (pointers), only meaningful once the structure is sound
+  // 3. whole-schema rules (templates, unions), only meaningful once the structure is sound
   let valid: DenseSchema | null = null;
   if (errors.size === 0 && rootErrors.length === 0) {
     const names = namePaths(schema);
@@ -171,7 +167,7 @@ export const analyze = (schema: DenseSchema): Analysis => {
       const r = getDenseFieldBitWidthRange(field, rangeSchema);
       if (!Number.isNaN(r.min)) ranges.set(pathKey(path), r);
     } catch {
-      // unresolved pointer or malformed field
+      // unresolved template or malformed field
     }
   }
   definitionsOf(schema).forEach((d, i) => {
@@ -190,9 +186,7 @@ export const analyze = (schema: DenseSchema): Analysis => {
     rootErrors,
     ranges,
     total,
-    header: valid ? headerBits(valid) : 0,
-    pointerCount: nodes.filter((n) => n.field.type === 'pointer').length,
-    byName
+    header: valid ? headerBits(valid) : 0
   };
 };
 

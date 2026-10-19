@@ -114,7 +114,7 @@ export const TryActions = () => {
           fold.clear('data:');
           if (analysis.schema)
             fold.setMany(
-              compoundPaths(analysis.schema, doc.data, analysis.byName).map((p) => `data:${p}`),
+              compoundPaths(analysis.schema, doc.data).map((p) => `data:${p}`),
               true
             );
         }}

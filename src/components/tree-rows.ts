@@ -13,7 +13,8 @@ export type Row =
       slot?: string;
       hasChildren: boolean;
     }
-  | { kind: 'variant'; key: string; path: NodePath; union: NodePath; variant: string; depth: number; count: number }
+  /** one variant of a union: a link to its template (`ref`, -1 when it has none) */
+  | { kind: 'variant'; key: string; path: NodePath; union: NodePath; variant: string; depth: number; ref: number }
   | { kind: 'add'; key: string; list: NodePath; depth: number; index: number }
   /** the heading of the templates, below the fields */
   | { kind: 'section'; key: string; label: string; count: number; depth: number };
@@ -48,19 +49,9 @@ export const buildRows = (schema: DenseSchema, collapsed: Set<string>): Row[] =>
         if (f.field) field(f.field, [...path, 'field'], depth + 1, null, 0, 'value');
         break;
       case 'union':
-        for (const [variant, fields] of Object.entries(f.variants ?? {})) {
+        for (const [variant, ref] of Object.entries(f.variants ?? {})) {
           const vPath = [...path, 'variants', variant];
-          const vKey = pathKey(vPath);
-          rows.push({
-            kind: 'variant',
-            key: vKey,
-            path: vPath,
-            union: path,
-            variant,
-            depth: depth + 1,
-            count: fields.length
-          });
-          if (!collapsed.has(vKey)) list(fields, vPath, depth + 2);
+          rows.push({ kind: 'variant', key: pathKey(vPath), path: vPath, union: path, variant, depth: depth + 1, ref });
         }
         break;
     }
@@ -74,22 +65,19 @@ export const buildRows = (schema: DenseSchema, collapsed: Set<string>): Row[] =>
   return rows;
 };
 
-/** Every row that can fold: containers, union variant groups (in the fields and the templates) */
+/** Every row that can fold: containers and unions (in the fields and the templates) */
 export const foldableKeys = (schema: DenseSchema): string[] => {
   const all = buildRows(schema, new Set());
-  return all.filter((r) => (r.kind === 'field' && r.hasChildren) || r.kind === 'variant').map((r) => r.key);
+  return all.filter((r) => r.kind === 'field' && r.hasChildren).map((r) => r.key);
 };
 
 export type DropTarget = { rowKey: string; pos: 'before' | 'after' | 'into'; list: NodePath; index: number };
 
 /** Where a drop on `row` at relative height `y` (0..1) lands */
 export const dropTargetFor = (row: Row, y: number, collapsed: Set<string>): DropTarget | null => {
-  if (row.kind === 'section') return null;
+  // a variant holds no fields of its own: they live in its template
+  if (row.kind === 'section' || row.kind === 'variant') return null;
   if (row.kind === 'add') return { rowKey: row.key, pos: 'before', list: row.list, index: row.index };
-  if (row.kind === 'variant') {
-    const open = !collapsed.has(row.key);
-    return { rowKey: row.key, pos: 'into', list: row.path, index: open ? 0 : row.count };
-  }
   const { field, list, index } = row;
   if (field.type === 'object') {
     const open = !collapsed.has(row.key);

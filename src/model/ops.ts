@@ -3,7 +3,7 @@ import { getAt, isPrefix, listNodes, parentListPath, setAt, type NodePath } from
 
 export type FieldType = DenseField['type'];
 
-export const FIELD_TYPES: { type: FieldType; label: string; hint: string; deprecated?: boolean }[] = [
+export const FIELD_TYPES: { type: FieldType; label: string; hint: string }[] = [
   { type: 'bool', label: 'Boolean', hint: '1 bit' },
   { type: 'int', label: 'Integer', hint: 'min..max' },
   { type: 'fixed', label: 'Fixed point', hint: 'min..max by precision' },
@@ -14,7 +14,6 @@ export const FIELD_TYPES: { type: FieldType; label: string; hint: string; deprec
   { type: 'optional', label: 'Optional', hint: 'presence bit + field' },
   { type: 'union', label: 'Union', hint: 'tagged variants' },
   { type: 'reference', label: 'Template', hint: 'a shape defined once' },
-  { type: 'pointer', label: 'Pointer', hint: 'deprecated, use a template', deprecated: true },
   { type: 'reference_numeric', label: 'Shared number', hint: 'range from a definition' }
 ];
 
@@ -58,9 +57,8 @@ export const fieldTemplate = (type: FieldType, name: string, taken: Set<string> 
     case 'optional':
       return { type, name, field: fieldTemplate('int', child(`${name}Value`), taken) };
     case 'union':
-      return { type, name, discriminator: enumTemplate('type', ['a', 'b']), variants: { a: [], b: [] } };
-    case 'pointer':
-      return { type, name, targetName: '' };
+      // variants need templates: `withVariantTemplates` (templates.ts) gives each -1 a new one
+      return { type, name, discriminator: 'type', variants: { a: -1, b: -1 } };
     case 'reference_numeric':
       return { type, name, ref: '' };
     case 'reference':
@@ -82,12 +80,7 @@ export const changeType = (field: DenseField, type: FieldType, schema: DenseSche
   const options = field.type === 'enum' ? field.options : field.type === 'enum_array' ? field.enum.options : null;
   if (options && next.type === 'enum') return enumTemplate(field.name, [...options]);
   if (options && next.type === 'enum_array') return { ...next, enum: enumTemplate('value', [...options]) };
-  if (options && next.type === 'union')
-    return {
-      ...next,
-      discriminator: enumTemplate('type', [...options]),
-      variants: Object.fromEntries(options.map((o) => [o, []]))
-    };
+  if (options && next.type === 'union') return { ...next, variants: Object.fromEntries(options.map((o) => [o, -1])) };
   return next;
 };
 
@@ -157,14 +150,6 @@ const renameDeep = (field: DenseField, taken: Set<string>): DenseField => {
       return { ...field, name, items: renameDeep(field.items, taken) };
     case 'optional':
       return { ...field, name, field: renameDeep(field.field, taken) };
-    case 'union':
-      return {
-        ...field,
-        name,
-        variants: Object.fromEntries(
-          Object.entries(field.variants).map(([k, fs]) => [k, fs.map((f) => renameDeep(f, taken))])
-        )
-      };
     default:
       return { ...field, name };
   }
@@ -209,49 +194,42 @@ export const unwrapField = (field: DenseField): DenseField => {
   return inner ? { ...inner, name: field.name } : field;
 };
 
-// --- union variants: discriminator options and variant keys stay in sync ---
+// --- union variants: names (in the order of the encoded index) mapped to template indices ---
 
-const withOptions = (
-  field: UnionField,
-  options: string[],
-  variants: Record<string, DenseField[]>,
-  defaultValue: string
-): UnionField => ({
-  ...field,
-  discriminator: {
-    ...field.discriminator,
-    options,
-    defaultValue: options.includes(defaultValue) ? defaultValue : options[0]
-  },
-  variants
-});
+export const variantNames = (field: UnionField): string[] => Object.keys(field.variants);
 
-export const addVariant = (field: UnionField, key: string): UnionField =>
-  withOptions(
-    field,
-    [...field.discriminator.options, key],
-    { ...field.variants, [key]: [] },
-    field.discriminator.defaultValue
-  );
+/** The variant of the default data: `defaultVariant`, or the first one */
+export const defaultVariantOf = (field: UnionField): string => field.defaultVariant ?? variantNames(field)[0];
+
+/** `defaultVariant` is only stored when it is not the first variant (as densing does) */
+const withDefault = (field: UnionField, def: string | undefined): UnionField => {
+  const next: UnionField = { ...field };
+  const names = variantNames(field);
+  if (def !== undefined && names.includes(def) && def !== names[0]) next.defaultVariant = def;
+  else delete next.defaultVariant;
+  return next;
+};
+
+export const addVariant = (field: UnionField, key: string, ref: number): UnionField =>
+  withDefault({ ...field, variants: { ...field.variants, [key]: ref } }, defaultVariantOf(field));
 
 export const removeVariant = (field: UnionField, key: string): UnionField => {
   const variants = { ...field.variants };
   delete variants[key];
-  return withOptions(
-    field,
-    field.discriminator.options.filter((o) => o !== key),
-    variants,
-    field.discriminator.defaultValue
-  );
+  return withDefault({ ...field, variants }, defaultVariantOf(field));
 };
 
 export const renameVariant = (field: UnionField, from: string, to: string): UnionField => {
-  if (from === to || field.discriminator.options.includes(to)) return field;
-  const options = field.discriminator.options.map((o) => (o === from ? to : o));
-  const variants = Object.fromEntries(options.map((o) => [o, field.variants[o === to ? from : o] ?? []]));
-  const def = field.discriminator.defaultValue === from ? to : field.discriminator.defaultValue;
-  return withOptions(field, options, variants, def);
+  if (from === to || to in field.variants || !(from in field.variants)) return field;
+  const variants = Object.fromEntries(Object.entries(field.variants).map(([k, ref]) => [k === from ? to : k, ref]));
+  const def = defaultVariantOf(field);
+  return withDefault({ ...field, variants }, def === from ? to : def);
 };
+
+export const setDefaultVariant = (field: UnionField, key: string): UnionField => withDefault(field, key);
+
+export const setVariantTemplate = (field: UnionField, key: string, ref: number): UnionField =>
+  key in field.variants ? { ...field, variants: { ...field.variants, [key]: ref } } : field;
 
 // --- numeric helpers shared by the inspector ---
 

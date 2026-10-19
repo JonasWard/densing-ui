@@ -2,7 +2,7 @@ import type { ReferenceField } from 'densing';
 import { formatBits } from '../model/analyze';
 import { updateField } from '../model/ops';
 import { getField, pathKey, type NodePath } from '../model/paths';
-import { addTemplate, convertPointers, inlineReference, templateUses } from '../model/templates';
+import { addTemplate, inlineReference, templateUses } from '../model/templates';
 import { useEditor } from '../editor';
 import { Field, TypeChip } from './ui';
 
@@ -82,49 +82,37 @@ export const TemplateUses = ({ index }: { index: number }) => {
     <Field label="Used by" hint="Editing the template changes every field below">
       <div className="children">
         {uses.length === 0 && (
-          <p className="error-box">Not used by any field: densing requires every template to be referenced.</p>
+          <p className="error-box">
+            Not used by any field or union variant: densing requires every template to be referenced.
+          </p>
         )}
         {uses.map((p) => {
-          const f = getField(doc.schema, p);
+          // a union variant (`[...union, 'variants', key]`) links to its union
+          const variant = p[p.length - 2] === 'variants' ? String(p[p.length - 1]) : null;
+          const owner = variant !== null ? p.slice(0, -2) : p;
+          const f = getField(doc.schema, owner);
           return (
             f && (
               <button
                 key={pathKey(p)}
                 type="button"
                 className="child-link"
-                onClick={() => dispatch({ type: 'select', path: p })}
+                onClick={() => dispatch({ type: 'select', path: owner })}
               >
                 <TypeChip type={f.type} />
                 <span>{f.name}</span>
+                {variant !== null && (
+                  <span className="muted small">
+                    when <b>{variant}</b>
+                  </span>
+                )}
                 <span className="row-spacer" />
-                <span className="muted small mono">{pathKey(p)}</span>
+                <span className="muted small mono">{pathKey(owner)}</span>
               </button>
             )
           );
         })}
       </div>
     </Field>
-  );
-};
-
-/** Pointers are deprecated in densing 0.4.4: offer densing's own migration */
-export const PointerDeprecation = () => {
-  const { doc, dispatch, analysis } = useEditor();
-  if (!analysis.pointerCount) return null;
-  return (
-    <div className="warn-box">
-      <p>
-        <b>Pointers are deprecated</b> in densing 0.4.4 and will be removed in 0.5.0. This schema has{' '}
-        {analysis.pointerCount} pointer{analysis.pointerCount === 1 ? '' : 's'}. Templates replace them and encode to
-        the same bits.
-      </p>
-      <button
-        type="button"
-        className="btn small primary"
-        onClick={() => dispatch({ type: 'editSchema', schema: convertPointers(doc.schema), select: null })}
-      >
-        Convert to templates
-      </button>
-    </div>
   );
 };

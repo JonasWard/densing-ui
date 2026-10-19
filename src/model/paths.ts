@@ -1,13 +1,14 @@
 import type { DenseField, DenseSchema } from 'densing';
 
 /**
- * Address of a node inside the schema JSON, e.g. `['fields', 2, 'variants', 'add', 0]`.
- * Lists that hold fields: `fields` (root and object) and `variants.<key>` (union).
- * Single slots: `items` (array) and `field` (optional).
+ * Address of a node inside the schema JSON, e.g. `['fields', 2, 'fields', 0]` or `['templates', 1]`.
+ * Lists that hold fields: `fields` (root and object) and `templates`.
+ * Single slots: `items` (array) and `field` (optional). A union's variants are template indices, not fields:
+ * `[...union, 'variants', key]` addresses one of them.
  */
 export type NodePath = readonly (string | number)[];
 
-/** Same format `schemaFromJson` uses in its errors: `fields[0].variants.add[1].items` */
+/** Same format `schemaFromJson` uses in its errors: `fields[0].fields[1].items` */
 export const pathKey = (path: NodePath): string =>
   path.reduce<string>((acc, seg) => (typeof seg === 'number' ? `${acc}[${seg}]` : acc ? `${acc}.${seg}` : seg), '');
 
@@ -48,7 +49,6 @@ export const ownerOf = (path: NodePath): NodePath | null => {
   if (p.length <= 1) return null;
   const last = p[p.length - 1];
   if (last === 'fields' || last === 'items' || last === 'field') return p.slice(0, -1);
-  if (p[p.length - 2] === 'variants') return p.slice(0, -2);
   return null;
 };
 
@@ -58,10 +58,7 @@ export interface NodeEntry {
   depth: number;
 }
 
-/**
- * Every field in display order (depth first). With `templates`, the template subtrees follow the
- * fields; without, only the fields (which is also what pointers can resolve to).
- */
+/** Every field in display order (depth first). With `templates`, the template subtrees follow the fields. */
 export const listNodes = (schema: DenseSchema, opts: { templates?: boolean } = {}): NodeEntry[] => {
   const out: NodeEntry[] = [];
   const visit = (field: DenseField, path: NodePath, depth: number) => {
@@ -80,10 +77,6 @@ export const childEntries = (field: DenseField, path: NodePath): [NodePath, Dens
   switch (field.type) {
     case 'object':
       return field.fields.map((f, i) => [[...path, 'fields', i], f]);
-    case 'union':
-      return Object.entries(field.variants).flatMap(([key, fields]) =>
-        fields.map((f, i): [NodePath, DenseField] => [[...path, 'variants', key, i], f])
-      );
     case 'array':
       return [[[...path, 'items'], field.items]];
     case 'optional':

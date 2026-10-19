@@ -2,6 +2,7 @@ import { getDefaultData, schemaFromJson, type DenseSchema } from 'densing';
 import { analyze } from './analyze';
 import { reconcile } from './data';
 import { migratePresets } from './definitions';
+import { upgradeSchema } from './migrate';
 import { examples } from './examples';
 import type { NodePath } from './paths';
 
@@ -58,7 +59,7 @@ const fitData = (schema: DenseSchema, data: unknown): unknown => {
   const a = analyze(schema);
   if (!a.schema) return data;
   try {
-    return reconcile(a.schema, data, a.byName);
+    return reconcile(a.schema, data);
   } catch {
     return getDefaultData(a.schema);
   }
@@ -71,7 +72,9 @@ export const initialState = (): State => {
       const saved = JSON.parse(raw) as Snapshot;
       if (Array.isArray(saved.docs) && saved.docs.length) {
         const activeId = saved.docs.some((d) => d.id === saved.activeId) ? saved.activeId : saved.docs[0].id;
-        return { docs: saved.docs, activeId, selected: null, past: [], future: [], lastEdit: null };
+        // documents saved before densing 0.5 hold pointers and old-style unions
+        const docs = saved.docs.map((d) => ({ ...d, schema: upgradeSchema(d.schema) }));
+        return { docs, activeId, selected: null, past: [], future: [], lastEdit: null };
       }
     }
   } catch {

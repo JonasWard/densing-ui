@@ -1,0 +1,676 @@
+{
+  "densing": "0.4.6",
+  "examples": [
+    {
+      "id": "device",
+      "schema": {
+        "fields": [
+          {
+            "type": "int",
+            "name": "deviceId",
+            "min": 0,
+            "max": 1000,
+            "defaultValue": 0
+          },
+          {
+            "type": "bool",
+            "name": "enabled",
+            "defaultValue": false
+          },
+          {
+            "type": "fixed",
+            "name": "temperature",
+            "min": -40,
+            "max": 125,
+            "precision": 0.1,
+            "defaultValue": -40
+          },
+          {
+            "type": "enum",
+            "name": "mode",
+            "options": ["eco", "normal", "performance"],
+            "defaultValue": "eco"
+          }
+        ]
+      },
+      "data": {
+        "deviceId": 42,
+        "enabled": true,
+        "temperature": 23.5,
+        "mode": "performance"
+      },
+      "encoded": "Cqnu"
+    },
+    {
+      "id": "user",
+      "schema": {
+        "fields": [
+          {
+            "type": "int",
+            "name": "userId",
+            "min": 0,
+            "max": 10000,
+            "defaultValue": 0
+          },
+          {
+            "type": "enum",
+            "name": "role",
+            "options": ["guest", "user", "admin"],
+            "defaultValue": "guest"
+          },
+          {
+            "type": "optional",
+            "name": "age",
+            "field": {
+              "type": "int",
+              "name": "ageValue",
+              "min": 0,
+              "max": 120,
+              "defaultValue": 0
+            }
+          },
+          {
+            "type": "bool",
+            "name": "verified",
+            "defaultValue": false
+          }
+        ]
+      },
+      "data": {
+        "userId": 100,
+        "role": "user",
+        "age": 25,
+        "verified": true
+      },
+      "encoded": "AZGZg"
+    },
+    {
+      "id": "network",
+      "schema": {
+        "fields": [
+          {
+            "type": "object",
+            "name": "network",
+            "fields": [
+              {
+                "type": "enum",
+                "name": "protocol",
+                "options": ["http", "https", "ws", "wss"],
+                "defaultValue": "http"
+              },
+              {
+                "type": "int",
+                "name": "port",
+                "min": 1024,
+                "max": 65535,
+                "defaultValue": 1024
+              },
+              {
+                "type": "bool",
+                "name": "ssl",
+                "defaultValue": false
+              }
+            ]
+          },
+          {
+            "type": "array",
+            "name": "allowedIPs",
+            "minLength": 0,
+            "maxLength": 5,
+            "items": {
+              "type": "int",
+              "name": "ip",
+              "min": 0,
+              "max": 255,
+              "defaultValue": 0
+            }
+          }
+        ]
+      },
+      "data": {
+        "network": {
+          "protocol": "https",
+          "port": 8080,
+          "ssl": true
+        },
+        "allowedIPs": [192, 168, 1]
+      },
+      "encoded": "RuQvAqAE"
+    },
+    {
+      "id": "action",
+      "schema": {
+        "fields": [
+          {
+            "type": "union",
+            "name": "action",
+            "discriminator": {
+              "type": "enum",
+              "name": "type",
+              "options": ["start", "stop", "pause"],
+              "defaultValue": "start"
+            },
+            "variants": {
+              "start": [
+                {
+                  "type": "int",
+                  "name": "delay",
+                  "min": 0,
+                  "max": 60,
+                  "defaultValue": 0
+                }
+              ],
+              "stop": [
+                {
+                  "type": "bool",
+                  "name": "force",
+                  "defaultValue": false
+                }
+              ],
+              "pause": [
+                {
+                  "type": "int",
+                  "name": "duration",
+                  "min": 0,
+                  "max": 3600,
+                  "defaultValue": 0
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "data": {
+        "action": {
+          "type": "start",
+          "delay": 5
+        }
+      },
+      "encoded": "BQ"
+    },
+    {
+      "id": "sensor",
+      "schema": {
+        "fields": [
+          {
+            "type": "int",
+            "name": "sensorId",
+            "min": 0,
+            "max": 100,
+            "defaultValue": 0
+          },
+          {
+            "type": "fixed",
+            "name": "temperature",
+            "min": -40,
+            "max": 85,
+            "precision": 0.1,
+            "defaultValue": -40
+          },
+          {
+            "type": "fixed",
+            "name": "humidity",
+            "min": 0,
+            "max": 100,
+            "precision": 0.1,
+            "defaultValue": 0
+          },
+          {
+            "type": "int",
+            "name": "battery",
+            "min": 0,
+            "max": 100,
+            "defaultValue": 0
+          },
+          {
+            "type": "bool",
+            "name": "alert",
+            "defaultValue": false
+          },
+          {
+            "type": "enum",
+            "name": "status",
+            "options": ["ok", "warning", "error"],
+            "defaultValue": "ok"
+          }
+        ]
+      },
+      "data": {
+        "sensorId": 7,
+        "temperature": 23.5,
+        "humidity": 65.2,
+        "battery": 87,
+        "alert": false,
+        "status": "ok"
+      },
+      "encoded": "Dp7oyuA"
+    },
+    {
+      "id": "palette",
+      "schema": {
+        "fields": [
+          {
+            "type": "array",
+            "name": "colors",
+            "minLength": 0,
+            "maxLength": 10,
+            "items": {
+              "type": "object",
+              "name": "color",
+              "fields": [
+                {
+                  "type": "int",
+                  "name": "r",
+                  "min": 0,
+                  "max": 255,
+                  "defaultValue": 0
+                },
+                {
+                  "type": "int",
+                  "name": "g",
+                  "min": 0,
+                  "max": 255,
+                  "defaultValue": 0
+                },
+                {
+                  "type": "int",
+                  "name": "b",
+                  "min": 0,
+                  "max": 255,
+                  "defaultValue": 0
+                }
+              ]
+            }
+          },
+          {
+            "type": "enum_array",
+            "name": "tags",
+            "enum": {
+              "type": "enum",
+              "name": "tag",
+              "options": ["warm", "cool", "pastel", "neon", "mono"],
+              "defaultValue": "warm"
+            },
+            "minLength": 0,
+            "maxLength": 6,
+            "defaultValue": []
+          }
+        ]
+      },
+      "data": {
+        "colors": [
+          {
+            "r": 255,
+            "g": 0,
+            "b": 0
+          },
+          {
+            "r": 0,
+            "g": 255,
+            "b": 0
+          },
+          {
+            "r": 0,
+            "g": 0,
+            "b": 255
+          }
+        ],
+        "tags": ["neon", "cool"]
+      },
+      "encoded": "P_AAAA_wAAAP9Q"
+    },
+    {
+      "id": "box",
+      "schema": {
+        "definitions": [
+          {
+            "name": "length",
+            "presets": {
+              "mm": {
+                "min": 0,
+                "max": 1000,
+                "defaultValue": 0
+              },
+              "m": {
+                "min": 0,
+                "max": 100,
+                "precision": 0.01,
+                "defaultValue": 0
+              }
+            },
+            "defaultPreset": "mm"
+          }
+        ],
+        "fields": [
+          {
+            "type": "reference_numeric",
+            "name": "width",
+            "ref": "length"
+          },
+          {
+            "type": "reference_numeric",
+            "name": "height",
+            "ref": "length"
+          },
+          {
+            "type": "reference_numeric",
+            "name": "depth",
+            "ref": "length"
+          }
+        ]
+      },
+      "data": {
+        "$presets": {
+          "length": "mm"
+        },
+        "width": 120,
+        "height": 40,
+        "depth": 800
+      },
+      "encoded": "DwFGQA"
+    },
+    {
+      "id": "expression",
+      "schema": {
+        "templates": [
+          {
+            "type": "union",
+            "name": "expr",
+            "discriminator": {
+              "type": "enum",
+              "name": "type",
+              "options": ["number", "add", "multiply"],
+              "defaultValue": "number"
+            },
+            "variants": {
+              "number": [
+                {
+                  "type": "int",
+                  "name": "value",
+                  "min": 0,
+                  "max": 1000,
+                  "defaultValue": 0
+                }
+              ],
+              "add": [
+                {
+                  "type": "reference",
+                  "name": "left",
+                  "ref": 0
+                },
+                {
+                  "type": "reference",
+                  "name": "right",
+                  "ref": 0
+                }
+              ],
+              "multiply": [
+                {
+                  "type": "reference",
+                  "name": "left",
+                  "ref": 0
+                },
+                {
+                  "type": "reference",
+                  "name": "right",
+                  "ref": 0
+                }
+              ]
+            }
+          }
+        ],
+        "fields": [
+          {
+            "type": "reference",
+            "name": "expr",
+            "ref": 0
+          }
+        ]
+      },
+      "data": {
+        "expr": {
+          "type": "multiply",
+          "left": {
+            "type": "add",
+            "left": {
+              "type": "number",
+              "value": 5
+            },
+            "right": {
+              "type": "number",
+              "value": 3
+            }
+          },
+          "right": {
+            "type": "number",
+            "value": 2
+          }
+        }
+      },
+      "encoded": "kAUAMAI"
+    },
+    {
+      "id": "pose",
+      "schema": {
+        "templates": [
+          {
+            "type": "object",
+            "name": "vec3",
+            "fields": [
+              {
+                "type": "fixed",
+                "name": "x",
+                "min": -10,
+                "max": 10,
+                "precision": 0.01,
+                "defaultValue": -10
+              },
+              {
+                "type": "fixed",
+                "name": "y",
+                "min": -10,
+                "max": 10,
+                "precision": 0.01,
+                "defaultValue": -10
+              },
+              {
+                "type": "fixed",
+                "name": "z",
+                "min": -10,
+                "max": 10,
+                "precision": 0.01,
+                "defaultValue": -10
+              }
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "type": "reference",
+            "name": "position",
+            "ref": 0
+          },
+          {
+            "type": "reference",
+            "name": "rotation",
+            "ref": 0
+          }
+        ]
+      },
+      "data": {
+        "position": {
+          "x": 1,
+          "y": 2,
+          "z": 3
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": -0.5
+        }
+      },
+      "encoded": "iZLCij6H0O2"
+    },
+    {
+      "id": "cita",
+      "schema": {
+        "fields": [
+          {
+            "type": "int",
+            "name": "length",
+            "min": 0,
+            "max": 7500,
+            "defaultValue": 0
+          },
+          {
+            "type": "int",
+            "name": "width",
+            "min": 0,
+            "max": 500,
+            "defaultValue": 0
+          },
+          {
+            "type": "int",
+            "name": "height",
+            "min": 0,
+            "max": 500,
+            "defaultValue": 0
+          },
+          {
+            "type": "enum",
+            "name": "typology",
+            "options": ["barn", "school", "house", "church", "castle"],
+            "defaultValue": "barn"
+          },
+          {
+            "type": "object",
+            "name": "offset",
+            "fields": [
+              {
+                "type": "int",
+                "name": "start",
+                "min": -256,
+                "max": 255,
+                "defaultValue": -256
+              },
+              {
+                "type": "int",
+                "name": "end",
+                "min": -256,
+                "max": 255,
+                "defaultValue": -256
+              }
+            ]
+          }
+        ]
+      },
+      "data": {
+        "length": 2000,
+        "width": 300,
+        "height": 200,
+        "typology": "house",
+        "offset": {
+          "start": 0,
+          "end": 0
+        }
+      },
+      "encoded": "PoSxkKAQA"
+    }
+  ],
+  "pointers": {
+    "schema": {
+      "fields": [
+        {
+          "type": "union",
+          "name": "expr",
+          "discriminator": {
+            "type": "enum",
+            "name": "type",
+            "options": ["number", "add", "multiply"],
+            "defaultValue": "number"
+          },
+          "variants": {
+            "number": [
+              {
+                "type": "int",
+                "name": "value",
+                "min": 0,
+                "max": 1000,
+                "defaultValue": 0
+              }
+            ],
+            "add": [
+              {
+                "type": "pointer",
+                "name": "left",
+                "targetName": "expr"
+              },
+              {
+                "type": "pointer",
+                "name": "right",
+                "targetName": "expr"
+              }
+            ],
+            "multiply": [
+              {
+                "type": "pointer",
+                "name": "left",
+                "targetName": "expr"
+              },
+              {
+                "type": "pointer",
+                "name": "right",
+                "targetName": "expr"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "data": {
+      "expr": {
+        "type": "multiply",
+        "left": {
+          "type": "add",
+          "left": {
+            "type": "number",
+            "value": 5
+          },
+          "right": {
+            "type": "number",
+            "value": 3
+          }
+        },
+        "right": {
+          "type": "number",
+          "value": 2
+        }
+      }
+    },
+    "encoded": "kAUAMAI"
+  },
+  "link": {
+    "name": "Expression Tree",
+    "hash": "#n=Expression+Tree&s=DFM8VProiaUZpZajZ86oem8dXGAJhCsuTK6pBOwJB6K9JbNXTDZ098FW-v0uA&d=kAUAMAI",
+    "data": {
+      "expr": {
+        "type": "multiply",
+        "left": {
+          "type": "add",
+          "left": {
+            "type": "number",
+            "value": 5
+          },
+          "right": {
+            "type": "number",
+            "value": 3
+          }
+        },
+        "right": {
+          "type": "number",
+          "value": 2
+        }
+      }
+    }
+  }
+}
