@@ -40,9 +40,9 @@ export const headerBits = (schema: DenseSchema) => definitionsOf(schema).reduce(
 
 export const findDefinition = (schema: DenseSchema, name: string) => definitionsOf(schema).find((d) => d.name === name);
 
-/** Paths of the `reference_numeric` fields that use a definition */
+/** Paths of the `reference_numeric` fields (in the fields and in templates) that use a definition */
 export const usesOf = (schema: DenseSchema, name: string): NodePath[] =>
-  listNodes(schema)
+  listNodes(schema, { templates: true })
     .filter(({ field }) => field.type === 'reference_numeric' && field.ref === name)
     .map((n) => n.path);
 

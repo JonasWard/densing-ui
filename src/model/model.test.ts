@@ -1,7 +1,7 @@
 import * as densing from 'densing';
 import { calculateDenseDataSize, densing as encode, schemaFromJson, type DenseSchema } from 'densing';
 import { describe, expect, it } from 'vitest';
-import { analyze, charsForBits } from './analyze';
+import { analyze, charsForBits, rangeCalculator } from './analyze';
 import {
   addDefinition,
   extractDefinition,
@@ -25,7 +25,7 @@ import {
   unwrapField,
   wrapField
 } from './ops';
-import { getAt, pathKey } from './paths';
+import { getAt, listNodes, pathKey } from './paths';
 import { decodeLink, encodeLink } from './share';
 import {
   canHide,
@@ -99,6 +99,15 @@ describe('examples', () => {
 });
 
 describe('analyze', () => {
+  it('bit ranges match densing for every node of every example', () => {
+    for (const ex of examples) {
+      const schema = schemaFromJson(ex.schema);
+      const rangeOf = rangeCalculator(schema);
+      for (const { field } of listNodes(schema, { templates: true }))
+        expect(rangeOf(field), ex.id).toEqual(densing.getDenseFieldBitWidthRange(field, schema));
+    }
+  });
+
   it('marks the node an error belongs to', () => {
     const s: DenseSchema = {
       fields: [{ type: 'object', name: 'o', fields: [{ type: 'int', name: 'x', min: 5, max: 1, defaultValue: 5 }] }]
@@ -272,6 +281,18 @@ describe('numeric definitions', () => {
     const removed = removeDefinition(box.schema, 0);
     expect(removed.definitions).toBeUndefined();
     expect([...analyze(removed).errors.keys()]).toEqual(['fields[0]', 'fields[1]', 'fields[2]']);
+  });
+
+  it('renaming a definition used only inside a template updates the template', () => {
+    const schema: DenseSchema = {
+      definitions: [{ name: 'coord', presets: { cm: { min: -100, max: 100 } } }],
+      templates: [{ type: 'reference_numeric', name: 'x', ref: 'coord' }],
+      fields: [{ type: 'reference', name: 'a', ref: 0 }]
+    };
+    expect(usesOf(schema, 'coord')).toEqual([['templates', 0]]);
+    const renamed = updateDefinition(schema, 0, { ...schema.definitions![0], name: 'pos' });
+    expect(renamed.templates![0]).toMatchObject({ ref: 'pos' });
+    expect(analyze(renamed).schema).not.toBeNull();
   });
 
   it('flags a bad preset on the definition', () => {

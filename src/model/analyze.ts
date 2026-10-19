@@ -7,6 +7,7 @@ import {
   type DenseSchema
 } from 'densing';
 import { definitionsOf, headerBits, selectorBits } from './definitions';
+import { bitsForStates } from './ops';
 import { childEntries, listNodes, pathKey, type NodePath } from './paths';
 
 export interface BitRange {
@@ -89,6 +90,64 @@ const namePaths = (schema: DenseSchema): Map<string, string[]> => {
   return out;
 };
 
+const addRanges = (a: BitRange, b: BitRange): BitRange => ({ min: a.min + b.min, max: a.max + b.max });
+const repeatBits = (count: number, bits: number) => (count === 0 ? 0 : count * bits);
+
+/**
+ * Bit range of any node, with one cache for the whole schema. densing's `getDenseFieldBitWidthRange`
+ * recomputes every template it reaches on each call, which takes seconds when it is called for each of
+ * the thousands of nodes of a schema with hundreds of templates. Composite fields use densing's formulas;
+ * leaves and each distinct template or pointer target are still measured by densing, once.
+ */
+export const rangeCalculator = (schema: DenseSchema) => {
+  const byNode = new Map<DenseField, BitRange>();
+  const byTarget = new Map<string, BitRange>();
+  const sum = (fields: DenseField[]) => fields.map(range).reduce(addRanges, { min: 0, max: 0 });
+  const range = (field: DenseField): BitRange => {
+    const known = byNode.get(field);
+    if (known) return known;
+    let r: BitRange;
+    switch (field.type) {
+      case 'reference':
+      case 'pointer': {
+        const key = field.type === 'reference' ? `t:${field.ref}` : `p:${field.targetName}`;
+        r = byTarget.get(key) ?? getDenseFieldBitWidthRange(field, schema);
+        byTarget.set(key, r);
+        break;
+      }
+      case 'object':
+        r = sum(field.fields);
+        break;
+      case 'optional':
+        r = { min: 1, max: 1 + range(field.field).max };
+        break;
+      case 'array': {
+        const lengthBits = bitsForStates(field.maxLength - field.minLength + 1);
+        const item = range(field.items);
+        r = {
+          min: lengthBits + repeatBits(field.minLength, item.min),
+          max: lengthBits + repeatBits(field.maxLength, item.max)
+        };
+        break;
+      }
+      case 'union': {
+        const tag = bitsForStates(field.discriminator.options.length);
+        const variants = Object.values(field.variants).map(sum);
+        r = {
+          min: tag + Math.min(...variants.map((v) => v.min)),
+          max: tag + Math.max(...variants.map((v) => v.max))
+        };
+        break;
+      }
+      default:
+        r = getDenseFieldBitWidthRange(field, schema);
+    }
+    byNode.set(field, r);
+    return r;
+  };
+  return range;
+};
+
 const listsOf = (schema: DenseSchema): [NodePath, DenseField[]][] => {
   const lists: [NodePath, DenseField[]][] = [[['fields'], schema.fields]];
   for (const { path, field } of listNodes(schema, { templates: true })) {
@@ -164,11 +223,11 @@ export const analyze = (schema: DenseSchema): Analysis => {
 
   // 4. bit ranges, best effort
   const ranges = new Map<string, BitRange>();
-  const rangeSchema = valid ?? schema;
+  const rangeOf = rangeCalculator(valid ?? schema);
   for (const { path, field } of nodes) {
     if (errors.has(pathKey(path))) continue;
     try {
-      const r = getDenseFieldBitWidthRange(field, rangeSchema);
+      const r = rangeOf(field);
       if (!Number.isNaN(r.min)) ranges.set(pathKey(path), r);
     } catch {
       // unresolved pointer or malformed field

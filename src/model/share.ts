@@ -4,10 +4,18 @@ import { densing, densingSchema, undensing, undensingSchema, type DenseSchema } 
  * A link holds the document's name, the schema packed by `densingSchema` and the preview data
  * packed with that schema, all URL safe: `#n=<name>&s=<schema>&d=<data>`.
  */
+// packing a large schema takes a while: do it once per schema, not on every preview edit
+const packed = new WeakMap<DenseSchema, string>();
+const packSchema = (schema: DenseSchema) => {
+  let s = packed.get(schema);
+  if (s === undefined) packed.set(schema, (s = densingSchema(schema)));
+  return s;
+};
+
 export const encodeLink = (name: string, schema: DenseSchema, data: unknown): string => {
   const params = new URLSearchParams();
   params.set('n', name);
-  params.set('s', densingSchema(schema));
+  params.set('s', packSchema(schema));
   params.set('d', densing(schema, data));
   return `#${params.toString()}`;
 };

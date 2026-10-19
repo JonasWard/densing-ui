@@ -2,16 +2,17 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  pointerWithin,
   useDraggable,
-  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent
 } from '@dnd-kit/core';
-import { useMemo, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState, type Dispatch } from 'react';
+import type { DenseSchema } from 'densing';
+import type { Analysis } from '../model/analyze';
+import type { Action } from '../model/store';
 import { formatBits } from '../model/analyze';
 import {
   allNames,
@@ -23,10 +24,10 @@ import {
   uniqueName,
   type FieldType
 } from '../model/ops';
-import { pathKey, samePath, type NodePath } from '../model/paths';
-import { useEditor } from '../editor';
+import { listNodes, pathKey, samePath, type NodePath } from '../model/paths';
+import { useEditor, type Hover } from '../editor';
 import { useCollapse } from '../ui-state';
-import { addTemplate, deleteNode, templateUses } from '../model/templates';
+import { addTemplate, deleteNode } from '../model/templates';
 import { isTemplateRoot } from '../model/paths';
 import { addDefinition, definitionsOf, presetNames, usesOf } from '../model/definitions';
 import { AddMenu } from './AddMenu';
@@ -50,6 +51,52 @@ const BASE_NAMES: Record<FieldType, string> = {
 
 export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }) => {
   const { doc, dispatch, state, analysis, hover, setHover } = useEditor();
+  // a stable callback, so the tree below skips re-rendering when only the preview data changes
+  const rename = useRef(onRequestRename);
+  useLayoutEffect(() => {
+    rename.current = onRequestRename;
+  });
+  const requestRename = useMemo(() => () => rename.current(), []);
+  return (
+    <div className="tree-panel">
+      <DefinitionsSection />
+      <TreeView
+        schema={doc.schema}
+        selected={state.selected}
+        analysis={analysis}
+        hover={hover}
+        dispatch={dispatch}
+        setHover={setHover}
+        onRequestRename={requestRename}
+      />
+      <p className="muted small tree-help">
+        Drag <span className="kbd">⠿</span> to move or nest · <span className="kbd">↑↓</span> select ·{' '}
+        <span className="kbd">Alt ↑↓</span> reorder · <span className="kbd">Ctrl D</span> duplicate ·{' '}
+        <span className="kbd">Del</span> remove
+      </p>
+    </div>
+  );
+};
+
+interface TreeViewProps {
+  schema: DenseSchema;
+  selected: NodePath | null;
+  analysis: Analysis;
+  hover: Hover;
+  dispatch: Dispatch<Action>;
+  setHover: (h: Hover) => void;
+  onRequestRename: () => void;
+}
+
+const TreeView = memo(function TreeView({
+  schema: docSchema,
+  selected,
+  analysis,
+  hover,
+  dispatch,
+  setHover,
+  onRequestRename
+}: TreeViewProps) {
   const fold = useCollapse();
   // this tree's folded rows, from the shared collapse state (`tree:<row key>`)
   const collapsed = useMemo(
@@ -61,19 +108,19 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
   const [drop, setDrop] = useState<DropTarget | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
 
-  const rows = useMemo(() => buildRows(doc.schema, collapsed), [doc.schema, collapsed]);
+  const rows = useMemo(() => buildRows(docSchema, collapsed), [docSchema, collapsed]);
   const fieldRows = rows.filter((r): r is Extract<Row, { kind: 'field' }> => r.kind === 'field');
-  const selectedKey = state.selected ? pathKey(state.selected) : null;
+  const selectedKey = selected ? pathKey(selected) : null;
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const toggle = (key: string) => fold.toggle(`tree:${key}`);
 
   const addField = (list: NodePath, index: number, type: FieldType) => {
-    const taken = allNames(doc.schema);
+    const taken = allNames(docSchema);
     const name = uniqueName(taken, BASE_NAMES[type]);
     taken.add(name);
-    let schema = doc.schema;
+    let schema = docSchema;
     let field = fieldTemplate(type, name, taken);
     if (field.type === 'reference_numeric') {
       // a shared number needs a definition: use the first one, or create one
@@ -97,16 +144,57 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
 
   const select = (path: NodePath | null) => dispatch({ type: 'select', path });
 
+  // uses per template, counted once per schema rather than once per row
+  const templateUseCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const { field } of listNodes(docSchema, { templates: true }))
+      if (field.type === 'reference') counts.set(field.ref, (counts.get(field.ref) ?? 0) + 1);
+    return counts;
+  }, [docSchema]);
+
   /** a short hint after the name: what a reference uses, how often a template is used */
   const rowNote = (row: Extract<Row, { kind: 'field' }>): string | undefined => {
     const f = row.field;
-    if (f.type === 'reference') return `→ ${doc.schema.templates?.[f.ref]?.name ?? '?'}`;
+    if (f.type === 'reference') return `→ ${docSchema.templates?.[f.ref]?.name ?? '?'}`;
     if (isTemplateRoot(row.path)) {
-      const uses = templateUses(doc.schema, row.index).length;
+      const uses = templateUseCounts.get(row.index) ?? 0;
       return `${uses} use${uses === 1 ? '' : 's'}`;
     }
     return undefined;
   };
+
+  // rows get one stable set of handlers, so a row only re-renders when its own props change
+  const latest = useRef<RowActions | null>(null);
+  useLayoutEffect(() => {
+    latest.current = {
+      toggle,
+      select: (row) => {
+        if (row.kind === 'field') select(row.path);
+        if (row.kind === 'variant') select(row.union);
+        treeRef.current?.focus();
+      },
+      hover: (row) => setHover(row.kind === 'field' ? { nodeKey: row.key } : {}),
+      openMenu: (key) => setMenuFor(menuFor === key ? null : key),
+      closeMenu: () => setMenuFor(null),
+      add: (row, type) => row.kind === 'add' && addField(row.list, row.index, type),
+      addTemplate: () => {
+        const r = addTemplate(docSchema);
+        dispatch({ type: 'editSchema', schema: r.schema, select: r.path });
+      }
+    };
+  });
+  const actions = useMemo<RowActions>(
+    () => ({
+      toggle: (key) => latest.current?.toggle(key),
+      select: (row) => latest.current?.select(row),
+      hover: (row) => latest.current?.hover(row),
+      openMenu: (key) => latest.current?.openMenu(key),
+      closeMenu: () => latest.current?.closeMenu(),
+      add: (row, type) => latest.current?.add(row, type),
+      addTemplate: () => latest.current?.addTemplate()
+    }),
+    []
+  );
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.target as HTMLElement).closest('input, textarea, select, .add-menu')) return;
@@ -117,7 +205,7 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
       e.preventDefault();
       if (e.altKey && current?.list) {
         const to = e.key === 'ArrowUp' ? current.index - 1 : current.index + 2;
-        const r = moveField(doc.schema, current.path, current.list, Math.max(0, to));
+        const r = moveField(docSchema, current.path, current.list, Math.max(0, to));
         if (r && !samePath(r.path, current.path)) dispatch({ type: 'editSchema', schema: r.schema, select: r.path });
         return;
       }
@@ -129,13 +217,13 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
       if ((e.key === 'ArrowLeft') !== isCollapsed) toggle(current.key);
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && current?.list) {
       e.preventDefault();
-      const after = deleteNode(doc.schema, current.path);
+      const after = deleteNode(docSchema, current.path);
       const siblings = fieldRows.filter((r) => r.list && samePath(r.list, current.list) && r.key !== current.key);
       const nextSel = siblings.length ? [...current.list, Math.min(current.index, siblings.length - 1)] : null;
       dispatch({ type: 'editSchema', schema: after, select: nextSel });
     } else if (mod && e.key.toLowerCase() === 'd' && current) {
       e.preventDefault();
-      const r = duplicateField(doc.schema, current.path);
+      const r = duplicateField(docSchema, current.path);
       if (r) dispatch({ type: 'editSchema', schema: r.schema, select: r.path });
     } else if (e.key === 'Enter' && current) {
       e.preventDefault();
@@ -145,100 +233,96 @@ export const OutlineTree = ({ onRequestRename }: { onRequestRename: () => void }
 
   const rowByKey = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
 
+  // the row under the pointer, found from the DOM: registering every row as a dnd-kit droppable costs
+  // O(rows²) on mount, which takes seconds for schemas with thousands of rows
   const targetFor = (e: DragMoveEvent | DragEndEvent): DropTarget | null => {
-    if (!e.over || !dragging || dragging.kind !== 'field') return null;
-    const row = rowByKey.get(String(e.over.id));
-    if (!row) return null;
+    if (!dragging || dragging.kind !== 'field') return null;
     const start = e.activatorEvent as PointerEvent;
-    const y = (start.clientY + e.delta.y - e.over.rect.top) / e.over.rect.height;
-    const t = dropTargetFor(row, y, collapsed);
+    const x = start.clientX + e.delta.x;
+    const y = start.clientY + e.delta.y;
+    const el = document
+      .elementsFromPoint(x, y)
+      .map((n) => n.closest('[data-row-key]'))
+      .find((n) => n && treeRef.current?.contains(n));
+    const row = el && rowByKey.get(el.getAttribute('data-row-key')!);
+    if (!el || !row) return null;
+    const rect = el.getBoundingClientRect();
+    const t = dropTargetFor(row, (y - rect.top) / rect.height, collapsed);
     return t && canMove(dragging.path, t.list) ? t : null;
   };
 
   return (
-    <div className="tree-panel">
-      <DefinitionsSection />
-      <DndContext
-        sensors={sensors}
-        collisionDetection={pointerWithin}
-        onDragStart={(e: DragStartEvent) => setDragging(rowByKey.get(String(e.active.id)) ?? null)}
-        onDragMove={(e) => setDrop(targetFor(e))}
-        onDragCancel={() => {
-          setDragging(null);
-          setDrop(null);
-        }}
-        onDragEnd={(e) => {
-          const t = targetFor(e);
-          if (t && dragging?.kind === 'field') {
-            const r = moveField(doc.schema, dragging.path, t.list, t.index);
-            if (r) {
-              dispatch({ type: 'editSchema', schema: r.schema, select: r.path });
-              fold.setMany([`tree:${pathKey(t.list)}`], false);
-            }
+    <DndContext
+      sensors={sensors}
+      onDragStart={(e: DragStartEvent) => setDragging(rowByKey.get(String(e.active.id)) ?? null)}
+      onDragMove={(e) => setDrop(targetFor(e))}
+      onDragCancel={() => {
+        setDragging(null);
+        setDrop(null);
+      }}
+      onDragEnd={(e) => {
+        const t = targetFor(e);
+        if (t && dragging?.kind === 'field') {
+          const r = moveField(docSchema, dragging.path, t.list, t.index);
+          if (r) {
+            dispatch({ type: 'editSchema', schema: r.schema, select: r.path });
+            fold.setMany([`tree:${pathKey(t.list)}`], false);
           }
-          setDragging(null);
-          setDrop(null);
-        }}
+        }
+        setDragging(null);
+        setDrop(null);
+      }}
+    >
+      <div
+        className="tree"
+        role="tree"
+        tabIndex={0}
+        ref={treeRef}
+        onKeyDown={onKeyDown}
+        onMouseLeave={() => setHover({})}
+        aria-label="Schema structure"
       >
-        <div
-          className="tree"
-          role="tree"
-          tabIndex={0}
-          ref={treeRef}
-          onKeyDown={onKeyDown}
-          onMouseLeave={() => setHover({})}
-          aria-label="Schema structure"
-        >
-          {rows.map((row) => (
-            <TreeRow
-              key={row.key}
-              row={row}
-              selected={
-                row.kind === 'field'
-                  ? row.key === selectedKey
-                  : row.kind === 'variant' && pathKey(row.union) === selectedKey
-              }
-              hovered={row.kind === 'field' && hover.nodeKey === row.key}
-              collapsed={collapsed.has(row.key)}
-              drop={drop?.rowKey === row.key ? drop.pos : null}
-              errors={row.kind === 'field' ? analysis.errors.get(row.key) : undefined}
-              bits={row.kind === 'field' ? formatBits(analysis.ranges.get(row.key)) : ''}
-              menuOpen={menuFor === row.key}
-              onToggle={() => toggle(row.key)}
-              onSelect={() => {
-                if (row.kind === 'field') select(row.path);
-                if (row.kind === 'variant') select(row.union);
-                treeRef.current?.focus();
-              }}
-              onHover={() => setHover(row.kind === 'field' ? { nodeKey: row.key } : {})}
-              onOpenMenu={() => setMenuFor(menuFor === row.key ? null : row.key)}
-              onCloseMenu={() => setMenuFor(null)}
-              onAdd={(type) => row.kind === 'add' && addField(row.list, row.index, type)}
-              note={row.kind === 'field' ? rowNote(row) : undefined}
-              onAddTemplate={() => {
-                const r = addTemplate(doc.schema);
-                dispatch({ type: 'editSchema', schema: r.schema, select: r.path });
-              }}
-            />
-          ))}
-        </div>
-        <DragOverlay dropAnimation={null}>
-          {dragging?.kind === 'field' && (
-            <div className="tree-row drag-ghost">
-              <TypeChip type={dragging.field.type} />
-              <span className="row-name">{dragging.field.name}</span>
-            </div>
-          )}
-        </DragOverlay>
-      </DndContext>
-      <p className="muted small tree-help">
-        Drag <span className="kbd">⠿</span> to move or nest · <span className="kbd">↑↓</span> select ·{' '}
-        <span className="kbd">Alt ↑↓</span> reorder · <span className="kbd">Ctrl D</span> duplicate ·{' '}
-        <span className="kbd">Del</span> remove
-      </p>
-    </div>
+        {rows.map((row) => (
+          <TreeRow
+            key={row.key}
+            row={row}
+            selected={
+              row.kind === 'field'
+                ? row.key === selectedKey
+                : row.kind === 'variant' && pathKey(row.union) === selectedKey
+            }
+            hovered={row.kind === 'field' && hover.nodeKey === row.key}
+            collapsed={collapsed.has(row.key)}
+            drop={drop?.rowKey === row.key ? drop.pos : null}
+            errors={row.kind === 'field' ? analysis.errors.get(row.key) : undefined}
+            bits={row.kind === 'field' ? formatBits(analysis.ranges.get(row.key)) : ''}
+            menuOpen={menuFor === row.key}
+            note={row.kind === 'field' ? rowNote(row) : undefined}
+            actions={actions}
+          />
+        ))}
+      </div>
+      <DragOverlay dropAnimation={null}>
+        {dragging?.kind === 'field' && (
+          <div className="tree-row drag-ghost">
+            <TypeChip type={dragging.field.type} />
+            <span className="row-name">{dragging.field.name}</span>
+          </div>
+        )}
+      </DragOverlay>
+    </DndContext>
   );
-};
+});
+
+interface RowActions {
+  toggle: (key: string) => void;
+  select: (row: Row) => void;
+  hover: (row: Row) => void;
+  openMenu: (key: string) => void;
+  closeMenu: () => void;
+  add: (row: Row, type: FieldType) => void;
+  addTemplate: () => void;
+}
 
 interface TreeRowProps {
   row: Row;
@@ -249,17 +333,11 @@ interface TreeRowProps {
   errors?: string[];
   bits: string;
   menuOpen: boolean;
-  onToggle: () => void;
-  onSelect: () => void;
-  onHover: () => void;
-  onOpenMenu: () => void;
-  onCloseMenu: () => void;
-  onAdd: (t: FieldType) => void;
   note?: string;
-  onAddTemplate: () => void;
+  actions: RowActions;
 }
 
-const TreeRow = ({
+const TreeRow = memo(function TreeRow({
   row,
   selected,
   hovered,
@@ -268,22 +346,14 @@ const TreeRow = ({
   errors,
   bits,
   menuOpen,
-  onToggle,
-  onSelect,
-  onHover,
-  onOpenMenu,
-  onCloseMenu,
-  onAdd,
   note,
-  onAddTemplate
-}: TreeRowProps) => {
+  actions
+}: TreeRowProps) {
   const movable = row.kind === 'field' && !!row.list && !isTemplateRoot(row.path);
   const drag = useDraggable({ id: row.key, disabled: !movable });
-  const dropZone = useDroppable({ id: row.key });
-  const setRef = (el: HTMLElement | null) => {
-    drag.setNodeRef(el);
-    dropZone.setNodeRef(el);
-  };
+  const setRef = (el: HTMLElement | null) => drag.setNodeRef(el);
+  const onToggle = () => actions.toggle(row.key);
+  const onSelect = () => actions.select(row);
   const indent = { paddingLeft: `${0.5 + row.depth * 1.1}rem` };
   const dropClass = drop ? `drop-${drop}` : '';
   // the add menu floats above the page and positions itself against this button
@@ -291,25 +361,31 @@ const TreeRow = ({
 
   if (row.kind === 'add') {
     return (
-      <div ref={setRef} className={`tree-row add-row ${dropClass}`} style={indent}>
+      <div ref={setRef} data-row-key={row.key} className={`tree-row add-row ${dropClass}`} style={indent}>
         <button
           ref={setAddButton}
           type="button"
           className="add-btn"
-          onClick={onOpenMenu}
+          onClick={() => actions.openMenu(row.key)}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
         >
           + Add field
         </button>
-        {menuOpen && <AddMenu anchor={addButton} onPick={onAdd} onClose={onCloseMenu} />}
+        {menuOpen && (
+          <AddMenu anchor={addButton} onPick={(type) => actions.add(row, type)} onClose={actions.closeMenu} />
+        )}
       </div>
     );
   }
 
   if (row.kind === 'section') {
     return (
-      <div ref={setRef} className={`tree-row section-row ${row.key === 'fields#' ? 'first' : ''}`}>
+      <div
+        ref={setRef}
+        data-row-key={row.key}
+        className={`tree-row section-row ${row.key === 'fields#' ? 'first' : ''}`}
+      >
         <button
           type="button"
           className="section-toggle"
@@ -322,7 +398,7 @@ const TreeRow = ({
         </button>
         <span className="row-spacer" />
         {row.key === 'templates#' && (
-          <button type="button" className="add-btn" onClick={onAddTemplate}>
+          <button type="button" className="add-btn" onClick={actions.addTemplate}>
             + Template
           </button>
         )}
@@ -334,6 +410,7 @@ const TreeRow = ({
     return (
       <div
         ref={setRef}
+        data-row-key={row.key}
         className={`tree-row variant-row ${dropClass} ${selected ? 'in-selected' : ''}`}
         style={indent}
         onClick={onSelect}
@@ -360,6 +437,7 @@ const TreeRow = ({
   return (
     <div
       ref={setRef}
+      data-row-key={row.key}
       role="treeitem"
       aria-selected={selected}
       aria-expanded={row.hasChildren ? !collapsed : undefined}
@@ -368,7 +446,7 @@ const TreeRow = ({
       }`}
       style={indent}
       onClick={onSelect}
-      onMouseEnter={onHover}
+      onMouseEnter={() => actions.hover(row)}
     >
       <span
         className={`grip ${movable ? '' : 'hidden'}`}
@@ -411,7 +489,7 @@ const TreeRow = ({
       <span className="bits-badge">{bits}</span>
     </div>
   );
-};
+});
 
 /** Numeric definitions live beside the fields: shared ranges with presets, chosen once per payload */
 const DefinitionsSection = () => {
